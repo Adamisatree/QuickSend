@@ -20,25 +20,38 @@ jobs:
         include:
           - os: ubuntu-latest
             target: linux-x64-android
+            flutter_arch: x64
           - os: ubuntu-24.04-arm
             target: linux-arm64
+            flutter_arch: arm64
           - os: windows-latest
             target: windows-x64
+            flutter_arch: x64
           - os: windows-11-arm
             target: windows-arm64
+            flutter_arch: arm64
           - os: macos-latest
             target: macos-arm64-ios
+            flutter_arch: arm64
           - os: macos-15-intel
             target: macos-intel
+            flutter_arch: x64
     defaults:
       run:
         working-directory: client
         shell: bash
     steps:
       - uses: actions/checkout@v7
+      - name: Install jq on ARM Linux runner
+        if: runner.os == 'Linux' && matrix.flutter_arch == 'arm64'
+        run: sudo apt-get update && sudo apt-get install -y jq
+      - name: Install jq on ARM Windows runner
+        if: runner.os == 'Windows' && matrix.flutter_arch == 'arm64'
+        run: choco install jq -y
       - uses: subosito/flutter-action@v2
         with:
           channel: stable
+          architecture: ${{ matrix.flutter_arch }}
           cache: true
       - name: Install Linux desktop prerequisites
         if: runner.os == 'Linux'
