@@ -1,0 +1,80 @@
+{
+  "name": "quicksend-lan",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Private, fast file sharing over your local network",
+  "main": "electron/main.js",
+  "scripts": {
+    "build": "esbuild public/app.js --bundle --format=iife --target=es2020 --outfile=public/assets/app.js",
+    "start": "npm run build && node src/server.js",
+    "dev": "npm run build && node src/server.js",
+    "desktop": "npm run build && electron .",
+    "dist:desktop": "npm run build && electron-builder",
+    "cap:sync": "npm run build && cap sync android",
+    "test": "node --test"
+  },
+  "engines": {
+    "node": ">=20"
+  },
+  "dependencies": {
+    "@capacitor/core": "^7.6.9",
+    "@capacitor/filesystem": "^7.1.9",
+    "@capacitor/share": "^7.0.4",
+    "@noble/hashes": "^1.8.0",
+    "tweetnacl": "^1.0.3",
+    "ws": "^8.18.0"
+  },
+  "devDependencies": {
+    "@capacitor/android": "^7.6.9",
+    "@capacitor/cli": "^7.6.9",
+    "electron": "^45.0.0",
+    "electron-builder": "^26.18.0",
+    "esbuild": "^0.25.0",
+    "typescript": "^5.9.3"
+  },
+  "build": {
+    "appId": "com.quicksend.lan",
+    "productName": "QuickSend",
+    "directories": {
+      "output": "dist"
+    },
+    "files": [
+      "electron/**/*",
+      "src/**/*",
+      "public/**/*",
+      "package.json",
+      "!src/**/*.test.js"
+    ],
+    "asar": true,
+    "win": {
+      "target": [
+        {
+          "target": "nsis",
+          "arch": [
+            "x64"
+          ]
+        }
+      ],
+      "artifactName": "QuickSend-Setup-${version}-${arch}.${ext}"
+    },
+    "nsis": {
+      "oneClick": false,
+      "perMachine": false,
+      "allowToChangeInstallationDirectory": true
+    },
+    "mac": {
+      "target": [
+        {
+          "target": "dmg",
+          "arch": [
+            "x64",
+            "arm64"
+          ]
+        }
+      ],
+      "artifactName": "QuickSend-${version}-${arch}.${ext}",
+      "category": "public.app-category.utilities",
+      "identity": null
+    }
+  }
+}

@@ -1,0 +1,75 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="theme-color" content="#f6f8fb">
+  <meta name="description" content="QuickSend：局域网内安全、快速地分享文件。">
+  <link rel="manifest" href="/manifest.webmanifest">
+  <link rel="icon" href="/icon.svg" type="image/svg+xml">
+  <link rel="stylesheet" href="/styles.css">
+  <title>QuickSend — 局域网文件快传</title>
+</head>
+<body>
+  <div class="app-shell">
+    <header class="topbar">
+      <a class="brand" href="/" aria-label="QuickSend 首页"><span class="brand-mark">q</span><span>QuickSend</span></a>
+      <div class="top-actions"><span class="security-pill"><span class="secure-dot"></span>端到端加密</span><span id="connectionBadge" class="connection-badge"><i></i><span>未连接</span></span></div>
+    </header>
+
+    <main class="main-layout">
+      <section class="hero">
+        <div class="hero-copy">
+          <div class="eyebrow"><span class="eyebrow-icon">✳</span> LOCAL NETWORK · PRIVATE BY DESIGN</div>
+          <h1>文件，就该<br><span>飞快送达。</span></h1>
+          <p>在同一个局域网中找到同伴，点选多人，一次发送。文件经加密直达接收者，不落盘、不经过云端。</p>
+          <div class="hero-tags"><span>↗ 局域网直连</span><span>◈ 加密传输</span><span>⇧ 批量发送</span></div>
+        </div>
+        <div class="hero-art" aria-hidden="true">
+          <div class="orbit orbit-one"></div><div class="orbit orbit-two"></div>
+          <div class="art-center"><span class="art-arrow">↑</span></div>
+          <div class="art-node node-a"><span>✦</span></div><div class="art-node node-b"><span>▤</span></div><div class="art-node node-c"><span>↗</span></div>
+          <div class="art-label label-a">SECURE</div><div class="art-label label-b">LOCAL</div>
+        </div>
+      </section>
+
+      <section class="workspace">
+        <aside class="left-column">
+          <article class="panel identity-panel">
+            <div class="panel-heading"><div><span class="section-kicker">YOUR SPACE</span><h2>加入共享空间</h2></div><span class="step-number">01</span></div>
+            <label class="field-label" for="username">你的昵称</label>
+            <div class="input-wrap"><span class="input-symbol">◉</span><input id="username" maxlength="32" placeholder="例如：小林的 Mac" autocomplete="nickname"><button id="saveName" class="icon-button" title="保存昵称" aria-label="保存昵称">✓</button></div>
+            <label class="field-label" for="serverUrl">QuickSend 服务地址</label>
+            <div class="input-wrap"><span class="input-symbol">⌁</span><input id="serverUrl" type="url" placeholder="http://192.168.1.10:4321" autocomplete="url" spellcheck="false"></div>
+            <div class="field-label row-label"><label for="roomCode">私密空间口令</label><button id="newRoomCode" class="text-button">生成口令</button></div>
+            <div class="input-wrap"><span class="input-symbol lock-symbol">⌑</span><input id="roomCode" type="password" placeholder="至少 8 位，分享给同伴" autocomplete="off"><button id="toggleRoom" class="icon-button" title="显示 / 隐藏口令" aria-label="显示 / 隐藏口令">◉</button></div>
+            <div class="room-hint"><span class="hint-lock">▣</span><span>只有知道口令的人能看见彼此。口令不会发送到服务器。</span></div>
+            <button id="connectButton" class="primary-button"><span>进入共享空间</span><span class="button-arrow">→</span></button>
+          </article>
+          <article class="panel network-panel">
+            <div class="network-icon">⌁</div><div class="network-copy"><span class="section-kicker">THIS DEVICE</span><strong>局域网连接地址</strong><span id="hostAddress" class="host-address">正在检测…</span></div><button id="copyAddress" class="copy-button" title="复制连接地址">复制</button>
+          </article>
+          <div class="privacy-note"><span>▱</span><p><strong>你的文件不会被保存。</strong><br>传输由本机临时转发，结束后立即清除。</p></div>
+        </aside>
+
+        <section class="panel peers-panel">
+          <div class="panel-heading peers-heading"><div><span class="section-kicker">PEOPLE NEARBY</span><h2>附近的设备 <span id="peerCount" class="count-badge">0</span></h2></div><button id="refreshPeers" class="refresh-button" title="刷新列表" aria-label="刷新列表">↻</button></div>
+          <div id="roomBanner" class="room-banner hidden"><span class="room-banner-icon">⌑</span><span><strong id="roomBannerText">共享空间已连接</strong><small>口令相同的设备会显示在这里</small></span><button id="leaveRoom" class="text-button">离开</button></div>
+          <div id="peerList" class="peer-list"><div class="empty-state"><div class="empty-illustration"><span>⌁</span><i></i><b></b></div><strong>你的共享空间还很安静</strong><p>输入和同伴相同的空间口令，<br>就能在这里看到彼此。</p></div></div>
+          <div id="selectionBar" class="selection-bar hidden"><span><b id="selectedCount">0</b> 位接收者已选择</span><button id="chooseFiles" class="send-button">选择文件 <span>↗</span></button></div>
+        </section>
+      </section>
+
+      <section class="transfers-section">
+        <div class="transfers-title"><div><span class="section-kicker">ACTIVITY</span><h2>传输动态</h2></div><span id="activitySummary" class="activity-summary">等待连接后开始</span></div>
+        <div id="transferList" class="transfer-list"><div class="activity-empty"><span>◷</span>最近的传输会显示在这里</div></div>
+      </section>
+      <footer class="footer"><span>QuickSend <i>·</i> 只在你的局域网中工作</span><span>没有账号 · 没有云端 · 你的设备你做主</span></footer>
+    </main>
+    <input id="filePicker" type="file" multiple hidden>
+    <div id="toast" class="toast" role="status" aria-live="polite"></div>
+    <div id="modalRoot"></div>
+  </div>
+  <script src="/assets/app.js" defer></script>
+</body>
+</html>
