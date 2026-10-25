@@ -44,8 +44,8 @@ npm start       # 自动构建后监听 0.0.0.0:4321
 
 ## 桌面与 Android 应用
 
-- **Windows：** `npm run dist:desktop -- --win nsis --x64` 生成 Windows 安装程序 `.exe`。
-- **macOS：** `npm run dist:desktop -- --mac dmg --x64 --arm64` 生成 Intel 与 Apple Silicon `.dmg`。
+- **Windows：** `npm run dist:desktop -- --win --x64` 生成 Windows 安装程序 `.exe`。
+- **macOS：** `npm run dist:desktop -- --mac --x64 --arm64` 生成 Intel 与 Apple Silicon `.dmg`。
 - **Android：** 安装 Android SDK/JDK 后运行 `npm run cap:sync`，再执行 `cd android && ./gradlew assembleDebug` 生成可侧载测试的 APK。首次打开应用时，填入运行 QuickSend 服务电脑显示的局域网地址。
 - **Release 自动构建：** 推送 `v*` 标签后，GitHub Actions 自动构建 Windows EXE、Intel/Apple Silicon DMG 和 Android APK，并发布到 GitHub Release。
 
