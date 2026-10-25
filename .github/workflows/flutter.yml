@@ -1,0 +1,49 @@
+name: Flutter client
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+jobs:
+  native:
+    name: Flutter · ${{ matrix.target }}
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: ubuntu-latest
+            target: linux-android
+          - os: windows-latest
+            target: windows
+          - os: macos-latest
+            target: macos-ios
+    defaults:
+      run:
+        working-directory: client
+        shell: bash
+    steps:
+      - uses: actions/checkout@v7
+      - uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+          cache: true
+      - name: Install Linux desktop prerequisites
+        if: runner.os == 'Linux'
+        run: sudo apt-get update && sudo apt-get install -y clang cmake ninja-build pkg-config libgtk-3-dev liblzma-dev
+      - name: Generate native runner projects and LAN permissions
+        run: bash tool/bootstrap_platforms.sh
+      - run: flutter pub get
+      - run: flutter analyze
+      - run: flutter test
+      - name: Build Linux and Android
+        if: matrix.target == 'linux-android'
+        run: flutter build linux --release && flutter build apk --release
+      - name: Build Windows
+        if: matrix.target == 'windows'
+        run: flutter build windows --release
+      - name: Build macOS and unsigned iOS
+        if: matrix.target == 'macos-ios'
+        run: flutter build macos --release && flutter build ios --release --no-codesign

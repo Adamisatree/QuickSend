@@ -1,5 +1,7 @@
 # QuickSend
 
+> **v1.1 开发中：** 正在开发 Flutter 原生客户端（非 HTML UI），代码位于 [`client/`](client/README.md)。当前已发布版本仍是 v1.0.0；新客户端尚未完成全平台构建、签名或发布。Android/iOS 后台执行和 ARM64 桌面分发仍需单独验证，详见客户端说明。
+
 QuickSend 是一个面向局域网的私密文件快传工具，包含轻量 Node.js 局域网服务、Windows/macOS 桌面应用壳和 Android 客户端。Windows 或 macOS 电脑可启动服务并作为传输中枢；同一网络中的设备用浏览器访问服务地址，或在 Android 应用中填写该地址后加入共享空间。桌面客户端自带服务，Android 应用作为局域网客户端。
 
 ## 快速开始

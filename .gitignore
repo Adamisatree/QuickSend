@@ -1,4 +1,14 @@
 node_modules/
+client/.dart_tool/
+client/.flutter-plugins
+client/.flutter-plugins-dependencies
+client/build/
+client/android/
+client/ios/
+client/linux/
+client/macos/
+client/windows/
+client/.idea/
 public/assets/
 dist/
 android/.gradle/
