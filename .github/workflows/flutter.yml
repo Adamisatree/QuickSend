@@ -6,20 +6,30 @@ on:
     branches: [main]
   workflow_dispatch:
 
+permissions:
+  contents: read
+
 jobs:
   native:
     name: Flutter · ${{ matrix.target }}
     runs-on: ${{ matrix.os }}
+    timeout-minutes: 45
     strategy:
       fail-fast: false
       matrix:
         include:
           - os: ubuntu-latest
-            target: linux-android
+            target: linux-x64-android
+          - os: ubuntu-24.04-arm
+            target: linux-arm64
           - os: windows-latest
-            target: windows
+            target: windows-x64
+          - os: windows-11-arm
+            target: windows-arm64
           - os: macos-latest
-            target: macos-ios
+            target: macos-arm64-ios
+          - os: macos-15-intel
+            target: macos-intel
     defaults:
       run:
         working-directory: client
@@ -50,40 +60,73 @@ jobs:
           fi
           exit "$status"
       - run: flutter test
-      - name: Build Linux and Android
-        if: matrix.target == 'linux-android'
+      - name: Build Linux x64 and Android
+        if: matrix.target == 'linux-x64-android'
         run: flutter build linux --release && flutter build apk --release
-      - name: Upload Linux/Android validation builds
-        if: (github.event_name == 'pull_request' || github.event_name == 'workflow_dispatch') && matrix.target == 'linux-android'
+      - name: Upload Linux x64/Android validation builds
+        if: (github.event_name == 'pull_request' || github.event_name == 'workflow_dispatch') && matrix.target == 'linux-x64-android'
         uses: actions/upload-artifact@v4
         with:
-          name: QuickSend-v1.1-validation-linux-android
+          name: QuickSend-v1.1-validation-linux-x64-android
           retention-days: 7
           path: |
             client/build/linux/x64/release/bundle/**
             client/build/app/outputs/flutter-apk/app-release.apk
           if-no-files-found: error
-      - name: Build Windows
-        if: matrix.target == 'windows'
+      - name: Build Linux ARM64
+        if: matrix.target == 'linux-arm64'
+        run: flutter build linux --release
+      - name: Upload Linux ARM64 validation build
+        if: (github.event_name == 'pull_request' || github.event_name == 'workflow_dispatch') && matrix.target == 'linux-arm64'
+        uses: actions/upload-artifact@v4
+        with:
+          name: QuickSend-v1.1-validation-linux-arm64
+          retention-days: 7
+          path: client/build/linux/arm64/release/bundle/**
+          if-no-files-found: error
+      - name: Build Windows x64
+        if: matrix.target == 'windows-x64'
         run: flutter build windows --release
-      - name: Upload Windows validation build
-        if: (github.event_name == 'pull_request' || github.event_name == 'workflow_dispatch') && matrix.target == 'windows'
+      - name: Upload Windows x64 validation build
+        if: (github.event_name == 'pull_request' || github.event_name == 'workflow_dispatch') && matrix.target == 'windows-x64'
         uses: actions/upload-artifact@v4
         with:
           name: QuickSend-v1.1-validation-windows-x64
           retention-days: 7
           path: client/build/windows/x64/runner/Release/**
           if-no-files-found: error
-      - name: Build macOS and unsigned iOS
-        if: matrix.target == 'macos-ios'
-        run: flutter build macos --release && flutter build ios --release --no-codesign
-      - name: Upload macOS/iOS validation builds
-        if: (github.event_name == 'pull_request' || github.event_name == 'workflow_dispatch') && matrix.target == 'macos-ios'
+      - name: Build Windows ARM64
+        if: matrix.target == 'windows-arm64'
+        run: flutter build windows --release
+      - name: Upload Windows ARM64 validation build
+        if: (github.event_name == 'pull_request' || github.event_name == 'workflow_dispatch') && matrix.target == 'windows-arm64'
         uses: actions/upload-artifact@v4
         with:
-          name: QuickSend-v1.1-validation-macos-ios
+          name: QuickSend-v1.1-validation-windows-arm64
+          retention-days: 7
+          path: client/build/windows/arm64/runner/Release/**
+          if-no-files-found: error
+      - name: Build macOS Apple Silicon and unsigned iOS
+        if: matrix.target == 'macos-arm64-ios'
+        run: flutter build macos --release && flutter build ios --release --no-codesign
+      - name: Upload macOS Apple Silicon/iOS validation builds
+        if: (github.event_name == 'pull_request' || github.event_name == 'workflow_dispatch') && matrix.target == 'macos-arm64-ios'
+        uses: actions/upload-artifact@v4
+        with:
+          name: QuickSend-v1.1-validation-macos-arm64-ios
           retention-days: 7
           path: |
             client/build/macos/Build/Products/Release/**
             client/build/ios/iphoneos/**
+          if-no-files-found: error
+      - name: Build macOS Intel
+        if: matrix.target == 'macos-intel'
+        run: flutter build macos --release
+      - name: Upload macOS Intel validation build
+        if: (github.event_name == 'pull_request' || github.event_name == 'workflow_dispatch') && matrix.target == 'macos-intel'
+        uses: actions/upload-artifact@v4
+        with:
+          name: QuickSend-v1.1-validation-macos-intel
+          retention-days: 7
+          path: client/build/macos/Build/Products/Release/**
           if-no-files-found: error
