@@ -5,13 +5,20 @@
 ## Passed in CI
 
 - Flutter dependency resolution, analyzer (errors/warnings fatal; info-level style lints non-fatal), and Flutter tests.
-- Release-mode build commands completed for Windows x64, Linux x64, the macOS GitHub-host architecture, an Android APK, and an unsigned iOS device build.
-- Existing Node tests also pass. CI run: <https://github.com/Adamisatree/QuickSend/actions/runs/40193727146>.
-- Pull-request builds and manual runs of the `Flutter client` workflow upload validation-only build artifacts for 7 days; those are not signed installers and are not GitHub Releases.
+- Release-mode builds completed on native CI runners for Linux x64/ARM64, Windows x64/ARM64, macOS Apple Silicon/Intel, Android APK, and unsigned iOS device output. The Linux/Windows ARM jobs bootstrap the stable Flutter release tag from source because the stable SDK archives are missing those host-architecture bundles.
+- Existing Node tests also pass. Full architecture-matrix run: <https://github.com/Adamisatree/QuickSend/actions/runs/40200984428>; Node CI: <https://github.com/Adamisatree/QuickSend/actions/runs/40200984425>.
+- Pull-request builds and manual runs of the `Flutter client` workflow upload validation-only artifacts for 7 days. The run above uploaded:
+  - [Linux x64 + Android APK](https://github.com/Adamisatree/QuickSend/actions/runs/40200984428/artifacts/12601874420)
+  - [Linux ARM64](https://github.com/Adamisatree/QuickSend/actions/runs/40200984428/artifacts/12601804156)
+  - [Windows x64](https://github.com/Adamisatree/QuickSend/actions/runs/40200984428/artifacts/12601604574)
+  - [Windows ARM64](https://github.com/Adamisatree/QuickSend/actions/runs/40200984428/artifacts/12602305340)
+  - [macOS Apple Silicon + unsigned iOS](https://github.com/Adamisatree/QuickSend/actions/runs/40200984428/artifacts/12601638446)
+  - [macOS Intel](https://github.com/Adamisatree/QuickSend/actions/runs/40200984428/artifacts/12601348526)
+  These are not signed installers and are not GitHub Releases.
 
 ## Required before a v1.1 release
 
-- [ ] Build and smoke-test Windows ARM64, Linux ARM64, macOS Intel, and macOS Apple Silicon independently. Current CI does **not** cover that complete architecture matrix.
+- [ ] Smoke-test the CI-built artifacts on physical/clean machines for Linux x64/ARM64, Windows x64/ARM64, macOS Intel/Apple Silicon, Android, and iOS; verify the packaged executables' architecture and install/launch behavior. CI compilation alone is not device validation.
 - [ ] Test transfers between real devices on every supported OS: approval/rejection, file and nested-folder transfer, empty/large files, multiple recipients, disconnects, insufficient storage, tampered/truncated chunks, and final SHA-256 confirmation. CI compilation is not a substitute for these tests.
 - [ ] Define a supported maximum file/transfer size based on real-device and filesystem testing; current prototype caps are implementation guards, not validated product limits.
 - [ ] Decide and implement background behavior. The current client has no Android foreground service and no iOS background-transfer implementation; mobile transfers must remain foregrounded. Desktop tray/close-to-tray behavior is also not implemented.
