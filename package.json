@@ -2,6 +2,7 @@
   "name": "quicksend-lan",
   "version": "1.0.0",
   "private": true,
+  "author": "QuickSend contributors",
   "description": "Private, fast file sharing over your local network",
   "main": "electron/main.js",
   "scripts": {

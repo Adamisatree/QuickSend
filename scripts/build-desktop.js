@@ -8,7 +8,9 @@ try {
 } catch (error) {
   reportFailure('Frontend build failed', error.message);
 }
-const result = spawnSync(process.execPath, [require.resolve('electron-builder/cli.js'), ...process.argv.slice(2)], { cwd: root, encoding: 'utf8', maxBuffer: 16 * 1024 * 1024 });
+const builderArgs = process.argv.slice(2);
+if (!builderArgs.includes('--publish')) builderArgs.push('--publish', 'never');
+const result = spawnSync(process.execPath, [require.resolve('electron-builder/cli.js'), ...builderArgs], { cwd: root, encoding: 'utf8', maxBuffer: 16 * 1024 * 1024 });
 const output = `${result.stdout || ''}${result.stderr || ''}`;
 if (output) process.stdout.write(output);
 if (result.error || result.status !== 0) reportFailure('Desktop packaging failed', result.error?.message || output.slice(-3500) || `process exited with code ${result.status}`);
