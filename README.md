@@ -49,6 +49,6 @@ npm start       # 自动构建后监听 0.0.0.0:4321
 - **Windows：** `npm run dist:desktop -- --win --x64` 生成 Windows 安装程序 `.exe`。
 - **macOS：** `npm run dist:desktop -- --mac --x64 --arm64` 生成 Intel 与 Apple Silicon `.dmg`。
 - **Android：** 安装 Android SDK/JDK 后运行 `npm run cap:sync`，再执行 `cd android && ./gradlew assembleDebug` 生成可侧载测试的 APK。首次打开应用时，填入运行 QuickSend 服务电脑显示的局域网地址。
-- **Release 自动构建：** 推送 `v*` 标签后，GitHub Actions 自动构建 Windows EXE、Intel/Apple Silicon DMG 和 Android APK，并发布到 GitHub Release。
+- **v1.0 Release 自动构建：** `v1.0.*` 标签仍使用旧 Electron/Capacitor 发布流程。Flutter 原生 v1.1 目前仅做 CI 构建验证；PR 构建或手动运行 `Flutter client` workflow 会上传 7 天有效的验证用构建产物，尚未配置 v1.1 发布标签/分发流程。
 
 目前 Windows/macOS 构建未做代码签名或 notarization，系统可能显示安全提醒。Android 发布 APK 由 CI 使用调试签名，适合侧载测试，不适合 Play Store 发布；要正式上架或支持稳定升级，需要由项目所有者保管并配置自己的 Android 签名密钥。Android 客户端需连接局域网内运行 QuickSend 服务的电脑。

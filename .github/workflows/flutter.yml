@@ -53,9 +53,37 @@ jobs:
       - name: Build Linux and Android
         if: matrix.target == 'linux-android'
         run: flutter build linux --release && flutter build apk --release
+      - name: Upload Linux/Android validation builds
+        if: (github.event_name == 'pull_request' || github.event_name == 'workflow_dispatch') && matrix.target == 'linux-android'
+        uses: actions/upload-artifact@v4
+        with:
+          name: QuickSend-v1.1-validation-linux-android
+          retention-days: 7
+          path: |
+            client/build/linux/x64/release/bundle/**
+            client/build/app/outputs/flutter-apk/app-release.apk
+          if-no-files-found: error
       - name: Build Windows
         if: matrix.target == 'windows'
         run: flutter build windows --release
+      - name: Upload Windows validation build
+        if: (github.event_name == 'pull_request' || github.event_name == 'workflow_dispatch') && matrix.target == 'windows'
+        uses: actions/upload-artifact@v4
+        with:
+          name: QuickSend-v1.1-validation-windows-x64
+          retention-days: 7
+          path: client/build/windows/x64/runner/Release/**
+          if-no-files-found: error
       - name: Build macOS and unsigned iOS
         if: matrix.target == 'macos-ios'
         run: flutter build macos --release && flutter build ios --release --no-codesign
+      - name: Upload macOS/iOS validation builds
+        if: (github.event_name == 'pull_request' || github.event_name == 'workflow_dispatch') && matrix.target == 'macos-ios'
+        uses: actions/upload-artifact@v4
+        with:
+          name: QuickSend-v1.1-validation-macos-ios
+          retention-days: 7
+          path: |
+            client/build/macos/Build/Products/Release/**
+            client/build/ios/iphoneos/**
+          if-no-files-found: error
