@@ -48,9 +48,28 @@ jobs:
       - name: Install jq on ARM Windows runner
         if: runner.os == 'Windows' && matrix.flutter_arch == 'arm64'
         run: choco install jq -y
+      - name: Resolve stable Flutter tag for non-macOS ARM runners
+        id: flutter-version
+        if: runner.os != 'macOS' && matrix.flutter_arch == 'arm64'
+        shell: bash
+        run: |
+          manifest_os=linux
+          if [[ "$RUNNER_OS" == "Windows" ]]; then manifest_os=windows; fi
+          version=$(curl --fail --silent --show-error --location \
+            "https://storage.googleapis.com/flutter_infra_release/releases/releases_${manifest_os}.json" \
+            | jq -r '[.releases[] | select(.channel == "stable")][0].version')
+          if [[ -z "$version" || "$version" == "null" ]]; then
+            echo "Could not resolve the latest stable Flutter tag for $manifest_os" >&2
+            exit 1
+          fi
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+          echo "Using Flutter release tag $version from the Git repository."
       - uses: subosito/flutter-action@v2
         with:
-          channel: stable
+          # ARM host SDK archives are missing from the official stable manifests;
+          # install the matching stable release tag from source instead.
+          channel: ${{ runner.os != 'macOS' && matrix.flutter_arch == 'arm64' && 'master' || 'stable' }}
+          flutter-version: ${{ steps.flutter-version.outputs.version }}
           architecture: ${{ matrix.flutter_arch }}
           cache: true
       - name: Install Linux desktop prerequisites
