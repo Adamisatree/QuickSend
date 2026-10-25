@@ -9,7 +9,7 @@
     "start": "npm run build && node src/server.js",
     "dev": "npm run build && node src/server.js",
     "desktop": "npm run build && electron .",
-    "dist:desktop": "npm run build && electron-builder",
+    "dist:desktop": "node scripts/build-desktop.js",
     "cap:sync": "npm run build && cap sync android",
     "test": "node --test"
   },
