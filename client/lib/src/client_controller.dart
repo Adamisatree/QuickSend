@@ -132,7 +132,11 @@ class ClientController extends ChangeNotifier {
   Future<void> createGroup(String name, Iterable<String> memberIds) async => _send({'type': 'group-create', 'name': name, 'members': memberIds.toList()});
   Future<void> respondGroupInvite(String groupId, bool accept) async {
     groupInvites.remove(groupId);
-    if (accept) _send({'type': 'group-join', 'groupId': groupId}); else _send({'type': 'group-decline', 'groupId': groupId});
+    if (accept) {
+      _send({'type': 'group-join', 'groupId': groupId});
+    } else {
+      _send({'type': 'group-decline', 'groupId': groupId});
+    }
     notifyListeners();
   }
   Future<void> leaveGroup(String groupId) async { _send({'type': 'group-leave', 'groupId': groupId}); groups.remove(groupId); notifyListeners(); }

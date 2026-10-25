@@ -1,7 +1,6 @@
 import 'dart:io';
 import 'dart:math';
 
-import 'package:characters/characters.dart';
 import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
@@ -116,7 +115,7 @@ class _DashboardState extends State<Dashboard> {
       content: SizedBox(width: 420, child: Column(mainAxisSize: MainAxisSize.min, children: [
         TextField(controller: _groupName, decoration: const InputDecoration(labelText: 'Group name', hintText: 'Weekend photos')),
         const SizedBox(height: 12), const Align(alignment: Alignment.centerLeft, child: Text('Invite connected devices')),
-        ...available.map((peer) => CheckboxListTile(value: picked.contains(peer.id), onChanged: (value) => setDialog(() { if (value == true) picked.add(peer.id); else picked.remove(peer.id); }), title: Text(peer.name), subtitle: Text(peer.ip), controlAffinity: ListTileControlAffinity.leading, contentPadding: EdgeInsets.zero)),
+        ...available.map((peer) => CheckboxListTile(value: picked.contains(peer.id), onChanged: (value) => setDialog(() { if (value == true) { picked.add(peer.id); } else { picked.remove(peer.id); } }), title: Text(peer.name), subtitle: Text(peer.ip), controlAffinity: ListTileControlAffinity.leading, contentPadding: EdgeInsets.zero)),
       ])),
       actions: [TextButton(onPressed: () => Navigator.pop(context), child: const Text('Cancel')), FilledButton(onPressed: () { Navigator.pop(context); c.createGroup(_groupName.text, picked); }, child: const Text('Create group'))],
     )));
@@ -189,7 +188,7 @@ class _DashboardState extends State<Dashboard> {
 
   Widget _peerChip(Peer peer) {
     final selected = _selectedPeers.contains(peer.id);
-    return FilterChip(selected: selected, avatar: CircleAvatar(radius: 13, child: Text(peer.name.characters.first.toUpperCase())), label: Text('${peer.name} · ${peer.ip}'), onSelected: (value) => setState(() { if (value) _selectedPeers.add(peer.id); else _selectedPeers.remove(peer.id); }));
+    return FilterChip(selected: selected, avatar: CircleAvatar(radius: 13, child: Text(peer.name.characters.first.toUpperCase())), label: Text('${peer.name} · ${peer.ip}'), onSelected: (value) => setState(() { if (value) { _selectedPeers.add(peer.id); } else { _selectedPeers.remove(peer.id); } }));
   }
 
   Widget _chatPanel() {
@@ -235,6 +234,6 @@ class _DashboardState extends State<Dashboard> {
 
   Widget _errorBanner(String text) => Container(width: double.infinity, margin: const EdgeInsets.symmetric(horizontal: 16), padding: const EdgeInsets.all(11), decoration: BoxDecoration(color: Theme.of(context).colorScheme.errorContainer, borderRadius: BorderRadius.circular(12)), child: Row(children: [Icon(Icons.warning_amber, color: Theme.of(context).colorScheme.error), const SizedBox(width: 8), Expanded(child: Text(text, style: TextStyle(color: Theme.of(context).colorScheme.onErrorContainer, fontSize: 12))), IconButton(onPressed: c.clearError, icon: const Icon(Icons.close, size: 18))]));
 
-  Widget _section({required String title, required IconData icon, Widget? trailing, required Widget child}) => Container(margin: const EdgeInsets.only(bottom: 18), padding: const EdgeInsets.all(18), decoration: BoxDecoration(color: Theme.of(context).colorScheme.surface, borderRadius: BorderRadius.circular(20), border: Border.all(color: Theme.of(context).dividerColor.withValues(alpha: .25))), child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [Row(children: [Icon(icon, color: Theme.of(context).colorScheme.primary), const SizedBox(width: 9), Expanded(child: Text(title, style: const TextStyle(fontSize: 17, fontWeight: FontWeight.w800))), if (trailing != null) trailing]), const SizedBox(height: 14), child]));
+  Widget _section({required String title, required IconData icon, Widget? trailing, required Widget child}) => Container(margin: const EdgeInsets.only(bottom: 18), padding: const EdgeInsets.all(18), decoration: BoxDecoration(color: Theme.of(context).colorScheme.surface, borderRadius: BorderRadius.circular(20), border: Border.all(color: Theme.of(context).dividerColor.withValues(alpha: .25))), child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [Row(children: [Icon(icon, color: Theme.of(context).colorScheme.primary), const SizedBox(width: 9), Expanded(child: Text(title, style: const TextStyle(fontSize: 17, fontWeight: FontWeight.w800))), ?trailing]), const SizedBox(height: 14), child]));
   Widget _emptyNote(String text) => Padding(padding: const EdgeInsets.symmetric(vertical: 12), child: Text(text, style: TextStyle(color: Theme.of(context).colorScheme.onSurfaceVariant, fontSize: 13)));
 }

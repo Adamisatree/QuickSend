@@ -4,6 +4,7 @@ class Peer {
   final String name;
   final String ip;
   final String publicKey;
+  final String auth;
   factory Peer.fromJson(Map<String, dynamic> json) => Peer(
     id: json['id'] as String? ?? '', name: json['name'] as String? ?? 'QuickSend',
     ip: json['ip'] as String? ?? '—', publicKey: json['publicKey'] as String? ?? '', auth: json['auth'] as String? ?? '',

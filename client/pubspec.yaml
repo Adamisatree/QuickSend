@@ -9,7 +9,6 @@ dependencies:
     sdk: flutter
   cryptography: ^2.7.0
   crypto: ^3.0.6
-  characters: ^1.4.0
   file_picker: ^10.3.3
   path: ^1.9.1
   path_provider: ^2.1.5
