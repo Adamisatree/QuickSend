@@ -36,7 +36,19 @@ jobs:
       - name: Generate native runner projects and LAN permissions
         run: bash tool/bootstrap_platforms.sh
       - run: flutter pub get
-      - run: flutter analyze
+      - name: Analyze Flutter client
+        run: |
+          set +e
+          flutter analyze 2>&1 | tee "$RUNNER_TEMP/flutter-analyze.txt"
+          status=${PIPESTATUS[0]}
+          if [ "$status" -ne 0 ]; then
+            while IFS= read -r line; do
+              case "$line" in
+                *" • "*) echo "::error title=Flutter analyzer::$line" ;;
+              esac
+            done < "$RUNNER_TEMP/flutter-analyze.txt"
+          fi
+          exit "$status"
       - run: flutter test
       - name: Build Linux and Android
         if: matrix.target == 'linux-android'
