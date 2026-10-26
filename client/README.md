@@ -1,6 +1,6 @@
-# QuickSend 原生客户端（v2.0 开发中）
+# QuickSend 原生客户端（v2.0.0 预览版）
 
-QuickSend 面向可信局域网，使用 Flutter 原生界面，帮助设备通过名称发现中继、加入私密房间、创建群组聊天并发送文件。此分支正在实现 v2.0；尚未发布，也未完成真实设备验证。
+QuickSend 面向可信局域网，使用 Flutter 原生界面，帮助设备通过名称发现中继、加入私密房间、创建群组聊天并发送文件。v2.0.0 预览版已发布：<https://github.com/Adamisatree/QuickSend/releases/tag/v2.0.0>。该版本并非稳定/生产就绪版本，尚未完成真实设备验证或独立安全审查。
 
 ## 功能
 
@@ -39,4 +39,4 @@ flutter run -d <device>
 - 未配置发布者拥有的 Windows/macOS/iOS/Android 生产签名凭据。不要把未签名/测试包称为生产就绪版本；iOS 发布需 Apple 团队与 provisioning profile。
 - Android/iOS 后台持续传输尚未实现；请让移动应用保持前台。桌面端无系统托盘服务。
 
-v2.0 发布前仍需完成：Flutter 多平台 CI、真实 LAN 设备间发现/连接/严格与高速传输测试、清洁环境安装测试、权限与防火墙测试、独立安全审查，以及发布状态和签名限制的明确说明。当前开发容器没有本地 Flutter/Dart SDK，必须用 CI 进行代码验证。
+若要将此预览版提升为稳定版，仍需完成真实 LAN 设备间发现/连接/严格与高速传输测试、清洁环境安装测试、权限与防火墙测试、独立安全审查，并由发布者配置签名凭据。CI 已通过并非设备验证。本地开发容器没有 Flutter/Dart SDK，Flutter 代码通过 GitHub Actions 验证。

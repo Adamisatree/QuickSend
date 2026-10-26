@@ -1,6 +1,6 @@
 # QuickSend v2.0 发布检查清单
 
-**当前状态：功能实现与 CI 检查通过；v2.0 预览标签/发布尚未创建。** Flutter 分析、测试和平台 CI 构建通过 <https://github.com/Adamisatree/QuickSend/actions/runs/40293524140>，Node CI 通过 <https://github.com/Adamisatree/QuickSend/actions/runs/40293524141>。LAN 自动发现与两种传输模式尚未经过真实设备测试，亦未完成独立安全审查。CI 不等于设备验证或生产就绪。
+**当前状态：v2.0.0 GitHub 预发布预览版已发布；稳定版检查仍未完成。** 发布地址：<https://github.com/Adamisatree/QuickSend/releases/tag/v2.0.0>。发布工作流首次尝试遇到 macOS Intel artifact 上传超时，重新触发后全矩阵成功：<https://github.com/Adamisatree/QuickSend/actions/runs/40299566280>。合并前 Flutter 分析、测试和平台构建通过 <https://github.com/Adamisatree/QuickSend/actions/runs/40294616989>，Node CI 通过 <https://github.com/Adamisatree/QuickSend/actions/runs/40294616979>。LAN 自动发现/传输尚未经过真实设备测试，亦未完成独立安全审查；CI 不等于设备验证或生产就绪。
 
 ## 已发布的旧版本
 
@@ -15,16 +15,16 @@
 - 私密房间、设备列表、群组与群聊、文件/文件夹发送。
 - 每次发送选择严格保密（端到端加密）或高速（文件内容明文经过局域网中继），并在发送与接收界面清晰警示。
 
-## 发布前必须完成
+## 稳定版之前的剩余门槛
 
-- [x] Flutter 依赖解析、分析、全部测试、Linux/Windows/macOS/Android/iOS CI 构建通过（run 40293524140）；Node CI 通过（run 40293524141）。
+- [x] Flutter 依赖解析、分析、全部测试、Linux/Windows/macOS/Android/iOS CI 构建通过（run 40294616989）；Node CI 通过（run 40294616979）。
 - [ ] 补充/通过高速模式 relay 测试与严格模式回归测试；测试旧版缺省模式兼容行为、拒绝流程、断线、零字节文件、路径/大小限制与校验失败清理。
 - [ ] 在真实设备/独立机器上测试 UDP 发现：Android、iOS、Windows、macOS、Linux；验证防火墙、不同 Wi-Fi/子网、访客网络、VPN 和手动连接回退。检查 socket 关闭与进程退出行为。
 - [ ] 在真实设备间测试严格模式的文件名/路径/内容保护，以及高速模式明文可见性警示与校验行为；确认中继看到的字段与文档一致。
 - [ ] 对所有支持平台执行干净环境安装/启动测试；实际测试文件、嵌套目录、多接收方、磁盘空间不足、拒绝/取消和较大文件。
 - [ ] 独立安全审查新的发现协议、共享房间密钥模型、加密/非加密模式差异、明文高速路径、完整性语义、拒绝服务防护和跨平台文件保存行为。当前实现未经独立审计。
 - [ ] 决定并完成签名/分发要求。不得伪造证书或凭据。Windows/macOS Authenticode 与 notarization、iOS Apple 签名/配置文件、Android 生产签名均需发布者自己的凭据；当前未配置。
-- [ ] 更新 v2.0 release workflow/说明、版本号、校验和及资产清单。只有在上述验证和发布状态审阅完成后，才能创建 v2.0 发布标签；若只能提供预览包，必须显著标明预览、未签名与设备验证限制。
+- [x] 更新 v2.0 release workflow/说明、版本号、校验和及资产清单；v2.0.0 预览标签已发布，并明确标示预览、未签名与真实设备验证限制。
 
 ## 验证命令
 
