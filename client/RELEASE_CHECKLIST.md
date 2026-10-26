@@ -5,16 +5,16 @@
 ## Passed in CI
 
 - Flutter dependency resolution, analyzer (errors/warnings fatal; info-level style lints non-fatal), and Flutter tests.
-- An internal source-level hardening pass found and addressed untrusted transfer-ID/path handling, receiver disk growth beyond declared file sizes, relay control/resource exhaustion, and interrupted-transfer cleanup. Regression tests cover malformed UUIDs, unsafe cross-platform paths, malformed auth-tag encoding, and over-declared chunk delivery. This is not an independent cryptographic security audit.
+- An internal source-level hardening pass found and addressed untrusted transfer-ID/path handling, receiver disk growth beyond declared file sizes, relay control/resource exhaustion, and interrupted-transfer cleanup. Regression tests cover malformed UUIDs, unsafe cross-platform paths, malformed auth-tag encoding, and over-declared chunk delivery. This is not an independent cryptographic security audit; see [SECURITY_REVIEW.md](SECURITY_REVIEW.md) for the scope, mitigations, and residual risks.
 - Release-mode builds completed on native CI runners for Linux x64/ARM64, Windows x64/ARM64, macOS Apple Silicon/Intel, Android APK, and unsigned iOS device output. The Linux/Windows ARM jobs bootstrap the stable Flutter release tag from source because the stable SDK archives are missing those host-architecture bundles.
-- Existing Node tests also pass. Full architecture-matrix run: <https://github.com/Adamisatree/QuickSend/actions/runs/40200984428>; Node CI: <https://github.com/Adamisatree/QuickSend/actions/runs/40200984425>.
+- Existing Node tests also pass. Full architecture-matrix run: <https://github.com/Adamisatree/QuickSend/actions/runs/40267805610>; Node CI: <https://github.com/Adamisatree/QuickSend/actions/runs/40267805113>.
 - Pull-request builds and manual runs of the `Flutter client` workflow upload validation-only artifacts for 7 days. The run above uploaded:
-  - [Linux x64 + Android APK](https://github.com/Adamisatree/QuickSend/actions/runs/40200984428/artifacts/12601874420)
-  - [Linux ARM64](https://github.com/Adamisatree/QuickSend/actions/runs/40200984428/artifacts/12601804156)
-  - [Windows x64](https://github.com/Adamisatree/QuickSend/actions/runs/40200984428/artifacts/12601604574)
-  - [Windows ARM64](https://github.com/Adamisatree/QuickSend/actions/runs/40200984428/artifacts/12602305340)
-  - [macOS Apple Silicon + unsigned iOS](https://github.com/Adamisatree/QuickSend/actions/runs/40200984428/artifacts/12601638446)
-  - [macOS Intel](https://github.com/Adamisatree/QuickSend/actions/runs/40200984428/artifacts/12601348526)
+  - [Linux x64 + Android APK](https://github.com/Adamisatree/QuickSend/actions/runs/40267805610/artifacts/12627815707)
+  - [Linux ARM64](https://github.com/Adamisatree/QuickSend/actions/runs/40267805610/artifacts/12627197005)
+  - [Windows x64](https://github.com/Adamisatree/QuickSend/actions/runs/40267805610/artifacts/12627063143)
+  - [Windows ARM64](https://github.com/Adamisatree/QuickSend/actions/runs/40267805610/artifacts/12627756048)
+  - [macOS Apple Silicon + unsigned iOS](https://github.com/Adamisatree/QuickSend/actions/runs/40267805610/artifacts/12627711274)
+  - [macOS Intel](https://github.com/Adamisatree/QuickSend/actions/runs/40267805610/artifacts/12627631635)
   These are not signed installers and are not GitHub Releases.
 
 ## Required before a v1.1 release
@@ -25,7 +25,7 @@
 - [ ] Decide and implement background behavior. The current client has no Android foreground service and no iOS background-transfer implementation; mobile transfers must remain foregrounded. Desktop tray/close-to-tray behavior is also not implemented.
 - [ ] Complete an independent security review of the new protocol and threat model; address shared-room-key trust, offline guessing of weak room keys, unauthenticated plain `ws://` relay metadata, and protocol abuse/rate limits.
 - [ ] Add persistent/resume behavior only if required by the final product contract; reconnect resume and durable group history are currently absent.
-- [ ] Configure Apple signing/provisioning for an iOS IPA and macOS signing/notarization. Configure a production Android signing key without committing it or placing it in chat.
+- [ ] Obtain and configure publisher-owned Windows Authenticode, macOS Developer ID/notarization, iOS distribution/provisioning, and production Android signing identities. See [SIGNING_GUIDE.md](SIGNING_GUIDE.md); these require the publisher's external accounts and are not provisioned in this workspace.
 - [ ] Produce release archives/installers for each target architecture, verify their checksums and install/upgrade/uninstall paths, and test downloaded artifacts on clean machines.
 - [ ] After the gates above pass, add a dedicated v1.1 publishing workflow and deliberately create the release tag. The legacy Electron/Capacitor publisher is restricted to `v1.0.*` so it cannot accidentally publish old builds as v1.1.
 
