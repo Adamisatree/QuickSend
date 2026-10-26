@@ -154,7 +154,13 @@ jobs:
           }
           Write-Host "Using Inno Setup compiler: $iscc"
           Write-Host "Packaging bundle: $bundle"
-          $compileOutput = @(& $iscc "/DAppVersion=$version" "/DTargetArch=$env:TARGET_ARCH" "/DBundleDir=$bundle" 'tool/windows-installer.iss' 2>&1)
+          $compilerArgs = @(
+            "/DAppVersion=`"$version`""
+            "/DTargetArch=`"$env:TARGET_ARCH`""
+            "/DBundleDir=`"$bundle`""
+            'tool/windows-installer.iss'
+          )
+          $compileOutput = @(& $iscc @compilerArgs 2>&1)
           $compileExitCode = $LASTEXITCODE
           $compileOutput | ForEach-Object { Write-Host $_ }
           if ($compileExitCode -ne 0) {
