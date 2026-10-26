@@ -1,6 +1,6 @@
 # QuickSend v2.0 发布检查清单
 
-**当前状态：开发中，禁止发布 v2.0 标签。** 本地工作区没有 Flutter/Dart SDK，当前代码尚未通过本次修改后的 CI；LAN 自动发现和两种传输模式也没有经过真实设备测试。不要将编译成功等同于设备验证或生产就绪。
+**当前状态：功能实现与 CI 检查通过；v2.0 预览标签/发布尚未创建。** Flutter 分析、测试和平台 CI 构建通过 <https://github.com/Adamisatree/QuickSend/actions/runs/40293524140>，Node CI 通过 <https://github.com/Adamisatree/QuickSend/actions/runs/40293524141>。LAN 自动发现与两种传输模式尚未经过真实设备测试，亦未完成独立安全审查。CI 不等于设备验证或生产就绪。
 
 ## 已发布的旧版本
 
@@ -17,7 +17,7 @@
 
 ## 发布前必须完成
 
-- [ ] Flutter 依赖解析、分析、全部测试、Linux/Windows/macOS/Android/iOS CI 构建通过；修复所有与本次代码相关的失败。
+- [x] Flutter 依赖解析、分析、全部测试、Linux/Windows/macOS/Android/iOS CI 构建通过（run 40293524140）；Node CI 通过（run 40293524141）。
 - [ ] 补充/通过高速模式 relay 测试与严格模式回归测试；测试旧版缺省模式兼容行为、拒绝流程、断线、零字节文件、路径/大小限制与校验失败清理。
 - [ ] 在真实设备/独立机器上测试 UDP 发现：Android、iOS、Windows、macOS、Linux；验证防火墙、不同 Wi-Fi/子网、访客网络、VPN 和手动连接回退。检查 socket 关闭与进程退出行为。
 - [ ] 在真实设备间测试严格模式的文件名/路径/内容保护，以及高速模式明文可见性警示与校验行为；确认中继看到的字段与文档一致。
