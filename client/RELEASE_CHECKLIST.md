@@ -5,6 +5,7 @@
 ## Passed in CI
 
 - Flutter dependency resolution, analyzer (errors/warnings fatal; info-level style lints non-fatal), and Flutter tests.
+- An internal source-level hardening pass found and addressed untrusted transfer-ID/path handling, receiver disk growth beyond declared file sizes, relay control/resource exhaustion, and interrupted-transfer cleanup. Regression tests cover malformed UUIDs, unsafe cross-platform paths, malformed auth-tag encoding, and over-declared chunk delivery. This is not an independent cryptographic security audit.
 - Release-mode builds completed on native CI runners for Linux x64/ARM64, Windows x64/ARM64, macOS Apple Silicon/Intel, Android APK, and unsigned iOS device output. The Linux/Windows ARM jobs bootstrap the stable Flutter release tag from source because the stable SDK archives are missing those host-architecture bundles.
 - Existing Node tests also pass. Full architecture-matrix run: <https://github.com/Adamisatree/QuickSend/actions/runs/40200984428>; Node CI: <https://github.com/Adamisatree/QuickSend/actions/runs/40200984425>.
 - Pull-request builds and manual runs of the `Flutter client` workflow upload validation-only artifacts for 7 days. The run above uploaded:

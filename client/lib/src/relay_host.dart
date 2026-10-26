@@ -4,6 +4,12 @@ import 'dart:io';
 import 'dart:math';
 import 'dart:typed_data';
 
+import 'transfer_safety.dart';
+
+const _maxSessions = 128;
+const _maxJsonMessageBytes = 8 * 1024 * 1024;
+const _maxControlMessagesPerSecond = 120;
+
 class _Session {
   _Session(this.id, this.socket, this.ip);
   final String id;
@@ -13,7 +19,20 @@ class _Session {
   String roomHash = '';
   String publicKey = '';
   String auth = '';
+  Timer? handshakeTimer;
+  int _messageWindowStart = DateTime.now().millisecondsSinceEpoch;
+  int _messageCount = 0;
   bool get joined => roomHash.isNotEmpty;
+
+  bool allowControlMessage() {
+    final now = DateTime.now().millisecondsSinceEpoch;
+    if (now - _messageWindowStart >= 1000) {
+      _messageWindowStart = now;
+      _messageCount = 0;
+    }
+    _messageCount++;
+    return _messageCount <= _maxControlMessagesPerSecond;
+  }
   Map<String, dynamic> toJson() => {'id': id, 'name': name, 'ip': ip, 'publicKey': publicKey, 'auth': auth};
 }
 
@@ -42,6 +61,8 @@ class _PendingTransfer {
   final List<Map<String, dynamic>> files;
   final Map<String, dynamic> envelopes;
   final Map<String, Set<String>> waitingAcks = {};
+  final Map<int, int> nextSequence = {};
+  final Map<int, int> forwardedBytes = {};
   bool started = false;
   bool senderCompleted = false;
   final Set<String> awaitingVerification = {};
@@ -66,13 +87,25 @@ class RelayHost {
     _http = await HttpServer.bind(InternetAddress.anyIPv4, port, shared: true);
     _http!.listen((request) async {
       if (request.uri.path == '/ws' && WebSocketTransformer.isUpgradeRequest(request)) {
+        if (_sessions.length >= _maxSessions) {
+          request.response.statusCode = HttpStatus.serviceUnavailable;
+          await request.response.close();
+          return;
+        }
         final socket = await WebSocketTransformer.upgrade(request);
         final id = _uuid();
         final session = _Session(id, socket, request.connectionInfo?.remoteAddress.address ?? 'unknown');
         _sessions[id] = session;
+        session.handshakeTimer = Timer(const Duration(seconds: 10), () {
+          if (!session.joined) session.socket.close(WebSocketStatus.policyViolation, 'Room handshake timed out');
+        });
         socket.add(jsonEncode({'type': 'challenge', 'id': id}));
         socket.listen((data) {
           if (data is String) {
+            if (utf8.encode(data).length > _maxJsonMessageBytes || !session.allowControlMessage()) {
+              session.socket.close(WebSocketStatus.policyViolation, 'Control-message limit exceeded');
+              return;
+            }
             try { _handleJson(session, Map<String, dynamic>.from(jsonDecode(data) as Map)); } catch (_) { _send(session, {'type': 'error', 'message': 'Invalid message'}); }
           } else if (data is List<int>) {
             _routeChunk(session, data);
@@ -96,10 +129,11 @@ class RelayHost {
     if (!session.joined) {
       if (message['type'] != 'hello') { _send(session, {'type': 'error', 'message': 'Join a private room first'}); return; }
       final room = message['roomHash']; final publicKey = message['publicKey'];
-      if (message['id'] != session.id || room is! String || !RegExp(r'^[a-f0-9]{64}$', caseSensitive: false).hasMatch(room) || publicKey is! String || _tryBase64(publicKey)?.length != 32 || message['auth'] is! String) {
+      if (message['id'] != session.id || room is! String || !RegExp(r'^[a-f0-9]{64}$', caseSensitive: false).hasMatch(room) || publicKey is! String || _tryBase64(publicKey)?.length != 32 || _tryBase64(message['auth'])?.length != 32) {
         _send(session, {'type': 'error', 'message': 'Invalid room key or public key'}); return;
       }
       session.roomHash = room.toLowerCase(); session.publicKey = publicKey; session.auth = message['auth'] as String;
+      session.handshakeTimer?.cancel();
       session.name = _clean(message['name'], max: 32, fallback: 'QuickSend');
       _send(session, {'type': 'welcome', ...session.toJson(), 'port': boundPort});
       _broadcastPeers(session.roomHash);
@@ -129,6 +163,10 @@ class RelayHost {
     if (requested.length > 50 || requested.any((id) => _sessions[id] == null || _sessions[id]!.roomHash != owner.roomHash)) {
       _send(owner, {'type': 'error', 'message': 'Group members must be online in the same private room'}); return;
     }
+    if (_groups.length >= 256) {
+      _send(owner, {'type': 'error', 'message': 'Relay group capacity reached'});
+      return;
+    }
     final id = _uuid();
     final group = _RoomGroup(id, _clean(message['name'], max: 48, fallback: 'LAN group'), owner.id, owner.roomHash)..members.add(owner.id)..invitees.addAll(requested);
     _groups[id] = group;
@@ -156,7 +194,7 @@ class RelayHost {
   void _sendGroupMessage(_Session sender, Map<String, dynamic> message) {
     final group = _groups[message['groupId']];
     final ciphertext = message['ciphertext']; final nonce = message['nonce']; final id = message['id']; final auth = message['auth'];
-    if (group == null || !group.members.contains(sender.id) || ciphertext is! String || ciphertext.length > 12000 || nonce is! String || _tryBase64(nonce)?.length != 12 || (_tryBase64(ciphertext)?.length ?? 0) < 16 || id is! String || !RegExp(r'^[a-f0-9-]{36}$', caseSensitive: false).hasMatch(id) || auth is! String) return;
+    if (group == null || !group.members.contains(sender.id) || ciphertext is! String || ciphertext.length > 12000 || nonce is! String || _tryBase64(nonce)?.length != 12 || (_tryBase64(ciphertext)?.length ?? 0) < 16 || id is! String || !isValidUuidV4(id) || _tryBase64(auth)?.length != 32) return;
     final item = {'id': id, 'groupId': group.id, 'senderId': sender.id, 'senderName': sender.name, 'senderIp': sender.ip, 'ciphertext': ciphertext, 'nonce': nonce, 'auth': auth, 'createdAt': DateTime.now().toUtc().toIso8601String()};
     group.messages.add(item);
     if (group.messages.length > 300) group.messages.removeAt(0);
@@ -165,7 +203,7 @@ class RelayHost {
 
   void _sendGroup(_Session session, Map<String, dynamic> message, String type) {
     final group = _groups[message['groupId']];
-    if (group == null) return;
+    if (group == null || type != 'group-invite-declined' || !group.invitees.remove(session.id)) return;
     _send(_sessions[group.ownerId], {'type': type, 'groupId': group.id, 'peer': session.toJson()});
   }
 
@@ -175,7 +213,7 @@ class RelayHost {
     final rawFiles = (message['files'] as List? ?? const []).whereType<Map>().map((e) => Map<String, dynamic>.from(e)).toList();
     final rawEnvelopes = message['keyEnvelopes'];
     final envelopes = rawEnvelopes is Map ? Map<String, dynamic>.from(rawEnvelopes) : <String, dynamic>{};
-    if (id is! String || !RegExp(r'^[a-f0-9-]{36}$', caseSensitive: false).hasMatch(id) || recipientIds.isEmpty || recipientIds.length > 50 || rawFiles.isEmpty || rawFiles.length > 100) {
+    if (id is! String || !isValidUuidV4(id) || recipientIds.isEmpty || recipientIds.length > 50 || rawFiles.isEmpty || rawFiles.length > maxTransferFiles) {
       _send(sender, {'type': 'transfer-error', 'transferId': id, 'message': 'Invalid transfer manifest'}); return;
     }
     final recipients = recipientIds.map((id) => _sessions[id]).toList();
@@ -186,13 +224,13 @@ class RelayHost {
     final files = <Map<String, dynamic>>[];
     for (final file in rawFiles) {
       final size = file['size'];
-      if (size is! int || size < 0 || size > 100 * 1024 * 1024 * 1024) {
+      if (size is! int || size < 0 || size > maxFileBytes) {
         _send(sender, {'type': 'transfer-error', 'transferId': id, 'message': 'Invalid file metadata'}); return;
       }
       total += size;
       files.add({'size': size});
     }
-    if (total > 500 * 1024 * 1024 * 1024 || _transfers.containsKey(id)) {
+    if (total > maxTransferBytes || _transfers.length >= 256 || _transfers.containsKey(id)) {
       _send(sender, {'type': 'transfer-error', 'transferId': id, 'message': 'Transfer exceeds the limit or duplicates an active ID'}); return;
     }
     for (final peerId in recipientIds) {
@@ -223,17 +261,24 @@ class RelayHost {
   }
 
   void _routeChunk(_Session sender, List<int> frame) {
-    if (frame.length < 4 + 2 + 12 + 16 || frame.length > 256 * 1024 + 4096) return;
+    if (frame.length < 4 + 2 + 12 + 16 || frame.length > maxChunkBytes + 2048 + 32) return;
     final view = ByteData.sublistView(Uint8List.fromList(frame));
     final metaLength = view.getUint32(0, Endian.big);
-    if (metaLength > 2048 || 4 + metaLength + 28 > frame.length) return;
+    if (metaLength > 2048 || 4 + metaLength + 28 > frame.length || frame.length - (4 + metaLength + 28) > maxChunkBytes) return;
     Map<String, dynamic> meta;
     try { meta = Map<String, dynamic>.from(jsonDecode(utf8.decode(frame.sublist(4, 4 + metaLength))) as Map); } catch (_) { return; }
     final transfer = _transfers[meta['transferId']];
     final index = meta['fileIndex']; final sequence = meta['seq'];
     if (transfer == null || !transfer.started || transfer.senderId != sender.id || index is! int || index < 0 || index >= transfer.files.length || sequence is! int || sequence < 0) return;
+    final expectedSequence = transfer.nextSequence[index] ?? 0;
+    final plaintextLength = frame.length - (4 + metaLength + 28);
+    final fileSize = transfer.files[index]['size'] as int;
+    final nextFileBytes = (transfer.forwardedBytes[index] ?? 0) + plaintextLength;
+    if (sequence != expectedSequence || transfer.waitingAcks.length >= 8 || plaintextLength <= 0 || nextFileBytes > fileSize) return;
     final ackKey = '$index:$sequence';
     if (transfer.waitingAcks.containsKey(ackKey)) return;
+    transfer.nextSequence[index] = expectedSequence + 1;
+    transfer.forwardedBytes[index] = nextFileBytes;
     transfer.waitingAcks[ackKey] = {...transfer.accepted};
     for (final recipientId in transfer.accepted) {
       final target = _sessions[recipientId];
@@ -257,6 +302,12 @@ class RelayHost {
   void _completeTransfer(_Session sender, Map<String, dynamic> message) {
     final transfer = _transfers[message['transferId']];
     if (transfer == null || !transfer.started || transfer.senderId != sender.id || transfer.waitingAcks.isNotEmpty || transfer.senderCompleted) return;
+    for (var index = 0; index < transfer.files.length; index++) {
+      if ((transfer.forwardedBytes[index] ?? 0) != transfer.files[index]['size']) {
+        _cancelTransfer(transfer, 'Sender ended before all declared file bytes were delivered');
+        return;
+      }
+    }
     transfer.senderCompleted = true;
     transfer.awaitingVerification.addAll(transfer.accepted);
     for (final id in transfer.accepted) _send(_sessions[id], {'type': 'transfer-complete', 'transferId': transfer.id});
@@ -288,6 +339,7 @@ class RelayHost {
 
   void _remove(_Session session) {
     if (_sessions.remove(session.id) == null) return;
+    session.handshakeTimer?.cancel();
     for (final group in _groups.values.toList()) {
       if (group.members.remove(session.id)) {
         if (group.members.isEmpty) _groups.remove(group.id);

@@ -13,6 +13,7 @@ import 'package:web_socket_channel/web_socket_channel.dart';
 
 import 'models.dart';
 import 'relay_host.dart';
+import 'transfer_safety.dart';
 
 class IncomingRequest {
   const IncomingRequest({required this.transferId, required this.senderName, required this.senderIp, required this.fileCount, required this.totalBytes});
@@ -62,7 +63,9 @@ class ClientController extends ChangeNotifier {
   final Map<String, GroupInvite> groupInvites = {};
   final Map<String, _Receiving> _receivers = {};
   final Map<String, Completer<void>> _acks = {};
+  final Set<Completer<void>> _activeAcks = {};
   final Map<String, Map<String, dynamic>> _pendingSend = {};
+  final Set<String> _abortedTransfers = {};
   final List<TransferProgress> transfers = [];
   final Map<String, List<String>> savedFiles = {};
   Future<void> _binaryQueue = Future<void>.value();
@@ -119,7 +122,8 @@ class ClientController extends ChangeNotifier {
     await _subscription?.cancel(); _subscription = null;
     await _channel?.sink.close(); _channel = null;
     connection = RoomConnectionState.disconnected; _myId = null; _roomSecret = null; _keyPair = null;
-    peers.clear(); groups.clear(); incoming.clear(); groupInvites.clear(); _receivers.clear(); _acks.clear();
+    peers.clear(); groups.clear(); incoming.clear(); groupInvites.clear();
+    _clearTransientTransfers();
     notifyListeners();
   }
 
@@ -155,16 +159,19 @@ class ClientController extends ChangeNotifier {
     if (connection != RoomConnectionState.connected || _myId == null || _keyPair == null) { error = 'Connect to a room before sending.'; notifyListeners(); return; }
     final ids = recipientIds.toSet();
     if (files.isEmpty || ids.isEmpty) { error = 'Select at least one file and one recipient.'; notifyListeners(); return; }
-    if (files.length > 100 || files.fold<int>(0, (sum, file) => sum + file.size) > 500 * 1024 * 1024 * 1024) { error = 'This transfer exceeds the 100-file or 500 GiB safety limit.'; notifyListeners(); return; }
+    if (files.length > maxTransferFiles || files.any((file) => file.size < 0 || file.size > maxFileBytes) || files.fold<int>(0, (sum, file) => sum + file.size) > maxTransferBytes) { error = 'This transfer exceeds the file-count or size safety limit.'; notifyListeners(); return; }
     try {
       final manifests = <Map<String, dynamic>>[];
+      final uniquePaths = <String>{};
       for (final item in files) {
+        final relativePath = validateRelativePath(item.relativePath);
+        if (!uniquePaths.add(relativePath.toLowerCase())) throw Exception('Duplicate file path: $relativePath');
         final file = File(item.path);
         if (!await file.exists()) throw Exception('${item.name} no longer exists');
         final actualSize = await file.length();
-        if (actualSize != item.size) throw Exception('${item.name} changed before sending');
+        if (actualSize != item.size || actualSize > maxFileBytes) throw Exception('${item.name} changed or exceeds the per-file limit');
         final hash = await digest.sha256.bind(file.openRead()).first;
-        manifests.add({'name': item.name, 'relativePath': _safePath(item.relativePath), 'size': actualSize, 'sha256': hash.toString(), 'type': 'application/octet-stream'});
+        manifests.add({'name': item.name, 'relativePath': relativePath, 'size': actualSize, 'sha256': hash.toString(), 'type': 'application/octet-stream'});
       }
       final transferId = _uuid();
       final transferKeyBytes = _randomBytes(32);
@@ -182,7 +189,9 @@ class ClientController extends ChangeNotifier {
       }
       final total = manifests.fold<int>(0, (sum, file) => sum + (file['size'] as int));
       final progress = TransferProgress(id: transferId, label: '${files.length} file${files.length == 1 ? '' : 's'}', totalBytes: total, peerLabel: ids.map((id) => peers[id]?.name ?? '?').join(', '));
-      transfers.insert(0, progress); _pendingSend[transferId] = {'files': files, 'key': transferKey, 'progress': progress};
+      transfers.insert(0, progress);
+      _abortedTransfers.remove(transferId);
+      _pendingSend[transferId] = {'files': files, 'key': transferKey, 'progress': progress};
       _send({'type': 'request-transfer', 'transferId': transferId, 'recipients': ids.toList(), 'files': manifests.map((f) => {'size': f['size']}).toList(), 'keyEnvelopes': envelopes});
       error = null; notifyListeners();
     } catch (e) { error = 'Transfer could not be prepared: $e'; notifyListeners(); }
@@ -195,16 +204,30 @@ class ClientController extends ChangeNotifier {
     if (request == null || !accept) return;
   }
 
-  Future<void> cancelTransfer(String id) async { _send({'type': 'cancel', 'transferId': id}); }
+  Future<void> cancelTransfer(String id) async {
+    _abortTransfer(id);
+    final progress = _findTransfer(id);
+    if (progress != null && progress.state != TransferState.finished) progress.state = TransferState.failed;
+    _send({'type': 'cancel', 'transferId': id});
+    notifyListeners();
+  }
   void clearError() { error = null; notifyListeners(); }
 
   void _onSocketData(dynamic raw) {
     if (raw is List<int>) {
+      if (raw.length > maxChunkBytes + 2048 + 32) {
+        _setDisconnected('Relay chunk exceeded the safety limit.');
+        return;
+      }
       final bytes = Uint8List.fromList(raw);
       _binaryQueue = _binaryQueue.then((_) => _handleChunk(bytes)).catchError((Object e) { error = 'Could not receive chunk: $e'; notifyListeners(); });
       return;
     }
     if (raw is! String) return;
+    if (utf8.encode(raw).length > 8 * 1024 * 1024) {
+      _setDisconnected('Relay message exceeded the safety limit.');
+      return;
+    }
     try {
       final message = Map<String, dynamic>.from(jsonDecode(raw) as Map);
       switch (message['type']) {
@@ -248,7 +271,11 @@ class ClientController extends ChangeNotifier {
           break;
         case 'chunk-acked':
           final key = '${message['transferId']}:${message['fileIndex']}:${message['seq']}';
-          final ack = _acks.remove(key); if (ack != null && !ack.isCompleted) ack.complete();
+          final ack = _acks.remove(key);
+          if (ack != null) {
+            _activeAcks.remove(ack);
+            if (!ack.isCompleted) ack.complete();
+          }
           break;
         case 'recipient-decision':
           final progress = _findTransfer(message['transferId']);
@@ -262,7 +289,7 @@ class ClientController extends ChangeNotifier {
         case 'transfer-cancelled': case 'transfer-error':
           final id = message['transferId'] as String? ?? '';
           final progress = _findTransfer(id); if (progress != null) progress.state = TransferState.failed;
-          _pendingSend.remove(id); _receivers.remove(id);
+          _abortTransfer(id);
           error = message['message'] as String? ?? 'Transfer failed';
           break;
         case 'error': error = message['message'] as String? ?? 'Relay error'; break;
@@ -350,32 +377,76 @@ class ClientController extends ChangeNotifier {
         var seq = 0;
         try {
           while (true) {
-            final bytes = await source.read(256 * 1024);
+            if (_abortedTransfers.contains(id) || connection != RoomConnectionState.connected || _channel == null) throw StateError('Transfer cancelled or connection closed');
+            final bytes = await source.read(maxChunkBytes);
             if (bytes.isEmpty) break;
             final ackKey = '$id:$fileIndex:$seq';
-            final ack = Completer<void>(); _acks[ackKey] = ack; window.add(ackKey);
+            final ack = Completer<void>();
+            _acks[ackKey] = ack;
+            _activeAcks.add(ack);
+            window.add(ackKey);
             final nonce = _randomBytes(12);
             final metadata = utf8.encode(jsonEncode({'transferId': id, 'fileIndex': fileIndex, 'seq': seq}));
             final box = await _aead.encrypt(bytes, secretKey: key, nonce: nonce, aad: metadata);
             final frame = BytesBuilder(copy: false)..add(_u32(metadata.length))..add(metadata)..add(nonce)..add(box.cipherText)..add(box.mac.bytes);
-            _channel?.sink.add(frame.takeBytes());
+            if (_abortedTransfers.contains(id) || connection != RoomConnectionState.connected || _channel == null) throw StateError('Transfer cancelled or connection closed');
+            _channel!.sink.add(frame.takeBytes());
             progress.received += bytes.length; seq++;
-            if (window.length >= 8) { await _acks.remove(window.removeAt(0))?.future.timeout(const Duration(seconds: 90)); }
+            if (window.length >= 8) await _waitForChunkAck(window.removeAt(0));
             notifyListeners();
           }
         } finally { await source.close(); }
-        for (final ackKey in window.toList()) { await _acks.remove(ackKey)?.future.timeout(const Duration(seconds: 90)); window.remove(ackKey); }
+        for (final ackKey in window.toList()) { await _waitForChunkAck(ackKey); window.remove(ackKey); }
       }
+      if (_abortedTransfers.contains(id)) throw StateError('Transfer cancelled');
       _send({'type': 'complete', 'transferId': id});
     } catch (e) {
-      progress.state = TransferState.failed; _send({'type': 'cancel', 'transferId': id}); error = 'Transfer failed: $e';
+      progress.state = TransferState.failed;
+      _abortTransfer(id);
+      _send({'type': 'cancel', 'transferId': id});
+      error = 'Transfer failed: $e';
     }
     notifyListeners();
   }
 
+  Future<void> _removePartialFiles(_Receiving receive) async {
+    try {
+      final directory = Directory(receive.root);
+      if (await directory.exists()) await directory.delete(recursive: true);
+    } catch (_) {
+      // A failed cleanup must not hide the original transfer error.
+    }
+  }
+
+  void _abortTransfer(String id) {
+    _abortedTransfers.add(id);
+    _pendingSend.remove(id);
+    final receiving = _receivers.remove(id);
+    if (receiving != null) unawaited(_removePartialFiles(receiving));
+    final prefix = '$id:';
+    for (final entry in _acks.entries.where((entry) => entry.key.startsWith(prefix)).toList()) {
+      _acks.remove(entry.key);
+      _activeAcks.remove(entry.value);
+      if (!entry.value.isCompleted) entry.value.complete();
+    }
+  }
+
+  Future<void> _waitForChunkAck(String key) async {
+    final ack = _acks[key];
+    if (ack == null) return; // It may have arrived before the sender reached this window boundary.
+    try {
+      await ack.future.timeout(const Duration(seconds: 90));
+    } finally {
+      _acks.remove(key);
+      _activeAcks.remove(ack);
+    }
+  }
+
   Future<void> _startReceiving(Map<String, dynamic> message) async {
     final id = message['transferId'] as String? ?? '';
+    String? stagingRoot;
     try {
+      if (!isValidUuidV4(id)) throw Exception('Invalid transfer identifier');
       if (_roomSecret == null || _keyPair == null || _myId == null) throw Exception('Not connected');
       final sender = Peer.fromJson(Map<String, dynamic>.from(message['sender'] as Map));
       if (!await _verifyPeer(sender)) throw Exception('Sender identity did not verify');
@@ -389,47 +460,70 @@ class ClientController extends ChangeNotifier {
       final keyBytes = base64.decode(payload['key'] as String);
       final manifest = (payload['files'] as List).map((e) => Map<String, dynamic>.from(e as Map)).toList();
       final publicFiles = (message['files'] as List).map((e) => Map<String, dynamic>.from(e as Map)).toList();
-      if (keyBytes.length != 32 || manifest.length != publicFiles.length || manifest.length > 100) throw Exception('Manifest does not match');
+      if (keyBytes.length != 32 || manifest.isEmpty || manifest.length != publicFiles.length || manifest.length > maxTransferFiles) throw Exception('Manifest does not match');
+      var totalSize = 0;
+      final paths = <String>{};
       for (var i = 0; i < manifest.length; i++) {
         final item = manifest[i];
-        if (item['size'] != publicFiles[i]['size'] || item['size'] is! int || (item['sha256'] as String? ?? '').length != 64) throw Exception('Invalid file manifest');
-        item['relativePath'] = _safePath(item['relativePath'] as String? ?? item['name'] as String? ?? 'file');
+        final size = item['size'];
+        final sha256 = item['sha256'];
+        if (size is! int || size < 0 || size > maxFileBytes || size != publicFiles[i]['size'] || !isValidSha256(sha256 is String ? sha256 : '')) throw Exception('Invalid file manifest');
+        totalSize += size;
+        if (totalSize > maxTransferBytes) throw Exception('Transfer exceeds the supported safety limit');
+        final path = validateRelativePath(item['relativePath'] as String? ?? item['name'] as String? ?? 'file');
+        if (!paths.add(path.toLowerCase())) throw Exception('Duplicate or colliding file paths in manifest');
+        item['relativePath'] = path;
       }
-      final paths = manifest.map((item) => item['relativePath'] as String).toSet();
-      if (paths.length != manifest.length) throw Exception('Duplicate file paths in manifest');
       final rootDir = await getApplicationDocumentsDirectory();
-      final root = p.join(rootDir.path, 'QuickSend', 'Received', id);
-      await Directory(root).create(recursive: true);
+      final rootParent = Directory(p.join(rootDir.path, 'QuickSend', 'Received'));
+      await rootParent.create(recursive: true);
+      final root = p.join(rootParent.path, id);
+      if (await FileSystemEntity.type(root, followLinks: false) != FileSystemEntityType.notFound) throw Exception('Transfer destination already exists');
+      await Directory(root).create();
+      stagingRoot = root;
+      if (await FileSystemEntity.type(root, followLinks: false) != FileSystemEntityType.directory) throw Exception('Invalid transfer destination');
       for (final item in manifest) {
         final target = p.joinAll([root, ...p.posix.split(item['relativePath'] as String)]);
+        if (!p.isWithin(root, target)) throw Exception('Unsafe file path');
         await Directory(p.dirname(target)).create(recursive: true);
-        await File(target).create(recursive: true);
+        await File(target).create(exclusive: true);
       }
       _receivers[id] = _Receiving(SecretKey(keyBytes), manifest, root);
+      stagingRoot = null;
       final progress = TransferProgress(id: id, label: '${manifest.length} file${manifest.length == 1 ? '' : 's'}', totalBytes: manifest.fold<int>(0, (sum, file) => sum + (file['size'] as int)), peerLabel: sender.name, state: TransferState.running);
       transfers.insert(0, progress);
       notifyListeners();
     } catch (e) {
+      if (stagingRoot != null) {
+        try { await Directory(stagingRoot).delete(recursive: true); } catch (_) { }
+      }
       _send({'type': 'cancel', 'transferId': id}); error = 'Could not prepare incoming transfer: $e'; notifyListeners();
     }
   }
 
   Future<void> _handleChunk(Uint8List frame) async {
-    if (frame.length < 4 + 2 + 12 + 16) return;
+    if (frame.length < 4 + 2 + 12 + 16 || frame.length > maxChunkBytes + 2048 + 32) throw Exception('Chunk frame size is outside the allowed range');
     final view = ByteData.sublistView(frame);
     final metaLength = view.getUint32(0, Endian.big);
     if (metaLength > 2048 || 4 + metaLength + 28 > frame.length) throw Exception('Bad chunk header');
     final metadataBytes = frame.sublist(4, 4 + metaLength);
     final metadata = Map<String, dynamic>.from(jsonDecode(utf8.decode(metadataBytes)) as Map);
-    final id = metadata['transferId'] as String; final fileIndex = metadata['fileIndex'] as int; final seq = metadata['seq'] as int;
-    final receive = _receivers[id]; if (receive == null || fileIndex < 0 || fileIndex >= receive.files.length) return;
+    final rawId = metadata['transferId']; final rawFileIndex = metadata['fileIndex']; final rawSeq = metadata['seq'];
+    if (rawId is! String || !isValidUuidV4(rawId) || rawFileIndex is! int || rawSeq is! int || rawFileIndex < 0 || rawSeq < 0) throw Exception('Invalid chunk metadata');
+    final id = rawId; final fileIndex = rawFileIndex; final seq = rawSeq;
+    final receive = _receivers[id]; if (receive == null || fileIndex >= receive.files.length) return;
+    final encryptedPayloadLength = frame.length - (4 + metaLength + 12 + 16);
+    if (encryptedPayloadLength <= 0 || encryptedPayloadLength > maxChunkBytes) throw Exception('Chunk exceeds the allowed size');
     final expected = receive.nextSeq[fileIndex] ?? 0;
     if (seq != expected) throw Exception('Out-of-order chunk');
     final nonceStart = 4 + metaLength; final cipherStart = nonceStart + 12;
     final cipherEnd = frame.length - 16;
     final plain = await _aead.decrypt(SecretBox(frame.sublist(cipherStart, cipherEnd), nonce: frame.sublist(nonceStart, cipherStart), mac: Mac(frame.sublist(cipherEnd))), secretKey: receive.key, aad: metadataBytes);
+    if (plain.isEmpty || plain.length > maxChunkBytes) throw Exception('Invalid plaintext chunk size');
     final item = receive.files[fileIndex];
-    final relative = _safePath(item['relativePath'] as String? ?? item['name'] as String? ?? 'file');
+    final receivedForFile = receive.received[fileIndex] ?? 0;
+    if (receivedForFile + plain.length > (item['size'] as int)) throw Exception('Chunk exceeds the declared file size');
+    final relative = validateRelativePath(item['relativePath'] as String? ?? item['name'] as String? ?? 'file');
     final target = p.joinAll([receive.root, ...p.posix.split(relative)]);
     if (!p.isWithin(receive.root, target)) throw Exception('Unsafe file path');
     await Directory(p.dirname(target)).create(recursive: true);
@@ -458,6 +552,7 @@ class ClientController extends ChangeNotifier {
         _send({'type': 'verified', 'transferId': id, 'ok': true});
       } catch (e) {
         final progress = _findTransfer(id); if (progress != null) progress.state = TransferState.failed;
+        await _removePartialFiles(receive);
         error = 'Received file failed integrity verification: $e';
         _send({'type': 'verified', 'transferId': id, 'ok': false});
       }
@@ -465,15 +560,33 @@ class ClientController extends ChangeNotifier {
       final progress = _findTransfer(id); if (progress != null) progress.state = TransferState.finished;
       _pendingSend.remove(id);
     }
+    _abortedTransfers.remove(id);
     notifyListeners();
   }
 
   TransferProgress? _findTransfer(String id) { for (final item in transfers) { if (item.id == id) return item; } return null; }
   void _send(Map<String, dynamic> message) { if (_channel != null && connection != RoomConnectionState.disconnected) _channel!.sink.add(jsonEncode(message)); }
+  void _clearTransientTransfers() {
+    for (final progress in transfers.where((item) => item.state == TransferState.running || item.state == TransferState.waiting)) {
+      progress.state = TransferState.failed;
+    }
+    for (final ack in _activeAcks.toList()) {
+      if (!ack.isCompleted) ack.complete();
+    }
+    _activeAcks.clear();
+    _acks.clear();
+    _pendingSend.clear();
+    for (final receive in _receivers.values) {
+      unawaited(_removePartialFiles(receive));
+    }
+    _receivers.clear();
+    _abortedTransfers.clear();
+  }
+
   void _setDisconnected(String? reason) {
     connection = RoomConnectionState.disconnected; _channel = null; _myId = null; _keyPair = null; _roomSecret = null;
     peers.clear(); groups.clear(); incoming.clear(); groupInvites.clear();
-    for (final progress in transfers.where((item) => item.state == TransferState.running || item.state == TransferState.waiting)) { progress.state = TransferState.failed; }
+    _clearTransientTransfers();
     if (reason != null) error = reason;
     notifyListeners();
   }
@@ -488,11 +601,7 @@ class ClientController extends ChangeNotifier {
   Uint8List _u32(int value) => (ByteData(4)..setUint32(0, value, Endian.big)).buffer.asUint8List();
   String _uuid() => '${_hex(4)}-${_hex(2)}-4${_hex(2).substring(1)}-${(8 + _random.nextInt(4)).toRadixString(16)}${_hex(2).substring(1)}-${_hex(6)}';
   String _hex(int bytes) => List.generate(bytes, (_) => _random.nextInt(256).toRadixString(16).padLeft(2, '0')).join();
-  String _safePath(String value) {
-    final normalized = value.replaceAll('\\', '/');
-    final parts = p.posix.normalize(normalized).split('/').where((part) => part.isNotEmpty && part != '.' && part != '..' && !part.contains(':')).map((part) => part.replaceAll(RegExp(r'[\x00-\x1f]'), '_')).toList();
-    return parts.isEmpty ? 'file' : parts.join('/');
-  }
+  String _safePath(String value) => validateRelativePath(value);
 
   @override
   void dispose() { _subscription?.cancel(); _channel?.sink.close(); _relayHost.stop(); super.dispose(); }
