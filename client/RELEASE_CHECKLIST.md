@@ -1,6 +1,6 @@
 # v1.1 release readiness
 
-**Status: NOT READY TO PUBLISH.** This checklist is intentionally a gate, not a release approval. No v1.1 tag or public release has been created.
+**Status: PRE-RELEASE PUBLISHED; NOT READY AS A STABLE RELEASE.** `v1.1.0` is available as a GitHub pre-release preview with unsigned/test packages: <https://github.com/Adamisatree/QuickSend/releases/tag/v1.1.0>. This checklist remains a gate for any stable/production release.
 
 ## Passed in CI
 

@@ -1,6 +1,6 @@
 # QuickSend Native (v1.1 development)
 
-The Flutter client replaces the old web-rendered interface with a Material 3 native UI. This is an in-progress v1.1 implementation; it has **not** been signed, released, or validated as production-ready on every target architecture.
+The Flutter client replaces the old web-rendered interface with a Material 3 native UI. **QuickSend v1.1.0 is published as a GitHub pre-release preview**; it is unsigned and not validated as production-ready on every target architecture. See the [release notes and downloads](https://github.com/Adamisatree/QuickSend/releases/tag/v1.1.0).
 
 ## Implemented in this branch
 
