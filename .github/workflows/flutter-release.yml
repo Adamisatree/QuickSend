@@ -142,13 +142,28 @@ jobs:
           if (-not (Get-ChildItem $bundle -Filter '*.exe' -File)) { throw "No executable found in $bundle" }
           New-Item -ItemType Directory -Force -Path 'release-assets' | Out-Null
           $version = $env:GITHUB_REF_NAME -replace '^v', ''
+          $programFilesX86 = [Environment]::GetFolderPath('ProgramFilesX86')
+          $programFiles = [Environment]::GetFolderPath('ProgramFiles')
           $isccCandidates = @()
-          if (${env:ProgramFiles(x86)}) { $isccCandidates += (Join-Path ${env:ProgramFiles(x86)} 'Inno Setup 6/ISCC.exe') }
-          if ($env:ProgramFiles) { $isccCandidates += (Join-Path $env:ProgramFiles 'Inno Setup 6/ISCC.exe') }
+          if ($programFilesX86) { $isccCandidates += (Join-Path $programFilesX86 'Inno Setup 6/ISCC.exe') }
+          if ($programFiles) { $isccCandidates += (Join-Path $programFiles 'Inno Setup 6/ISCC.exe') }
           $iscc = $isccCandidates | Where-Object { Test-Path $_ } | Select-Object -First 1
-          if (-not $iscc) { throw "Inno Setup compiler not found in Program Files" }
-          & $iscc "/DAppVersion=$version" "/DTargetArch=$env:TARGET_ARCH" "/DBundleDir=$bundle" 'tool/windows-installer.iss'
-          if ($LASTEXITCODE -ne 0) { throw "Inno Setup failed with exit code $LASTEXITCODE" }
+          if (-not $iscc) {
+            Write-Host '::error title=Inno Setup::Compiler not found. Checked: ' ($isccCandidates -join '; ')
+            throw 'Inno Setup compiler not found in Program Files'
+          }
+          Write-Host "Using Inno Setup compiler: $iscc"
+          Write-Host "Packaging bundle: $bundle"
+          $compileOutput = @(& $iscc "/DAppVersion=$version" "/DTargetArch=$env:TARGET_ARCH" "/DBundleDir=$bundle" 'tool/windows-installer.iss' 2>&1)
+          $compileExitCode = $LASTEXITCODE
+          $compileOutput | ForEach-Object { Write-Host $_ }
+          if ($compileExitCode -ne 0) {
+            foreach ($line in $compileOutput) {
+              $safe = ([string]$line) -replace '%', '%25' -replace '\r', '%0D' -replace '\n', '%0A'
+              Write-Host "::error title=Inno Setup::$safe"
+            }
+            throw "Inno Setup failed with exit code $compileExitCode"
+          }
       - name: Package macOS disk image
         if: startsWith(matrix.target, 'macos-')
         env:
