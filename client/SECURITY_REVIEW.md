@@ -1,6 +1,6 @@
 # QuickSend v2.0 安全审查记录（初步）
 
-**状态：开发阶段的源码检查，不是独立安全审计，也不是发布批准。** v2.0 代码通过 Flutter 分析、自动化测试与平台 CI 构建（<https://github.com/Adamisatree/QuickSend/actions/runs/40293524140>），Node CI 通过（<https://github.com/Adamisatree/QuickSend/actions/runs/40293524141>）。没有进行真实设备、恶意网络、模糊测试、渗透测试或第三方密码学审查；CI 不证明设备行为。
+**状态：开发阶段的源码检查，不是独立安全审计，也不是发布批准。** v2.0 代码通过 Flutter 分析、自动化测试与平台 CI 构建（<https://github.com/Adamisatree/QuickSend/actions/runs/40294616989>），Node CI 通过（<https://github.com/Adamisatree/QuickSend/actions/runs/40294616979>）。没有进行真实设备、恶意网络、模糊测试、渗透测试或第三方密码学审查；CI 不证明设备行为。
 
 ## 设计与数据暴露
 
