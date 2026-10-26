@@ -109,7 +109,7 @@ jobs:
         if: (github.event_name == 'pull_request' || github.event_name == 'workflow_dispatch') && matrix.target == 'linux-x64-android'
         uses: actions/upload-artifact@v4
         with:
-          name: QuickSend-v1.1-validation-linux-x64-android
+          name: QuickSend-v2.0-validation-linux-x64-android
           retention-days: 7
           path: |
             client/build/linux/x64/release/bundle/**
@@ -122,7 +122,7 @@ jobs:
         if: (github.event_name == 'pull_request' || github.event_name == 'workflow_dispatch') && matrix.target == 'linux-arm64'
         uses: actions/upload-artifact@v4
         with:
-          name: QuickSend-v1.1-validation-linux-arm64
+          name: QuickSend-v2.0-validation-linux-arm64
           retention-days: 7
           path: client/build/linux/arm64/release/bundle/**
           if-no-files-found: error
@@ -133,7 +133,7 @@ jobs:
         if: (github.event_name == 'pull_request' || github.event_name == 'workflow_dispatch') && matrix.target == 'windows-x64'
         uses: actions/upload-artifact@v4
         with:
-          name: QuickSend-v1.1-validation-windows-x64
+          name: QuickSend-v2.0-validation-windows-x64
           retention-days: 7
           path: client/build/windows/x64/runner/Release/**
           if-no-files-found: error
@@ -144,7 +144,7 @@ jobs:
         if: (github.event_name == 'pull_request' || github.event_name == 'workflow_dispatch') && matrix.target == 'windows-arm64'
         uses: actions/upload-artifact@v4
         with:
-          name: QuickSend-v1.1-validation-windows-arm64
+          name: QuickSend-v2.0-validation-windows-arm64
           retention-days: 7
           path: client/build/windows/arm64/runner/Release/**
           if-no-files-found: error
@@ -155,7 +155,7 @@ jobs:
         if: (github.event_name == 'pull_request' || github.event_name == 'workflow_dispatch') && matrix.target == 'macos-arm64-ios'
         uses: actions/upload-artifact@v4
         with:
-          name: QuickSend-v1.1-validation-macos-arm64-ios
+          name: QuickSend-v2.0-validation-macos-arm64-ios
           retention-days: 7
           path: |
             client/build/macos/Build/Products/Release/**
@@ -168,7 +168,7 @@ jobs:
         if: (github.event_name == 'pull_request' || github.event_name == 'workflow_dispatch') && matrix.target == 'macos-intel'
         uses: actions/upload-artifact@v4
         with:
-          name: QuickSend-v1.1-validation-macos-intel
+          name: QuickSend-v2.0-validation-macos-intel
           retention-days: 7
           path: client/build/macos/Build/Products/Release/**
           if-no-files-found: error

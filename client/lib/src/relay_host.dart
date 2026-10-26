@@ -60,6 +60,7 @@ class _PendingTransfer {
   final Set<String> accepted = {};
   final List<Map<String, dynamic>> files;
   final Map<String, dynamic> envelopes;
+  final bool strict;
   final Map<String, Set<String>> waitingAcks = {};
   final Map<int, int> nextSequence = {};
   final Map<int, int> forwardedBytes = {};
@@ -67,7 +68,7 @@ class _PendingTransfer {
   bool senderCompleted = false;
   final Set<String> awaitingVerification = {};
   Timer? timer;
-  _PendingTransfer({required this.id, required this.senderId, required this.recipients, required this.files, required this.envelopes}) : pending = {...recipients};
+  _PendingTransfer({required this.id, required this.senderId, required this.recipients, required this.files, required this.envelopes, required this.strict}) : pending = {...recipients};
 }
 
 /// In-memory LAN relay. Payload encryption/decryption stays entirely on endpoints.
@@ -97,16 +98,16 @@ class RelayHost {
         final session = _Session(id, socket, request.connectionInfo?.remoteAddress.address ?? 'unknown');
         _sessions[id] = session;
         session.handshakeTimer = Timer(const Duration(seconds: 10), () {
-          if (!session.joined) session.socket.close(WebSocketStatus.policyViolation, 'Room handshake timed out');
+          if (!session.joined) session.socket.close(WebSocketStatus.policyViolation, '房间握手超时');
         });
         socket.add(jsonEncode({'type': 'challenge', 'id': id}));
         socket.listen((data) {
           if (data is String) {
             if (utf8.encode(data).length > _maxJsonMessageBytes || !session.allowControlMessage()) {
-              session.socket.close(WebSocketStatus.policyViolation, 'Control-message limit exceeded');
+              session.socket.close(WebSocketStatus.policyViolation, '控制消息超过限制');
               return;
             }
-            try { _handleJson(session, Map<String, dynamic>.from(jsonDecode(data) as Map)); } catch (_) { _send(session, {'type': 'error', 'message': 'Invalid message'}); }
+            try { _handleJson(session, Map<String, dynamic>.from(jsonDecode(data) as Map)); } catch (_) { _send(session, {'type': 'error', 'message': '消息无效'}); }
           } else if (data is List<int>) {
             _routeChunk(session, data);
           }
@@ -119,7 +120,7 @@ class RelayHost {
   }
 
   Future<void> stop() async {
-    for (final transfer in _transfers.values.toList()) _cancelTransfer(transfer, 'LAN relay stopped');
+    for (final transfer in _transfers.values.toList()) _cancelTransfer(transfer, '局域网中继已停止');
     for (final session in _sessions.values.toList()) await session.socket.close(WebSocketStatus.goingAway);
     _sessions.clear(); _groups.clear(); _transfers.clear();
     await _http?.close(force: true); _http = null;
@@ -127,10 +128,10 @@ class RelayHost {
 
   void _handleJson(_Session session, Map<String, dynamic> message) {
     if (!session.joined) {
-      if (message['type'] != 'hello') { _send(session, {'type': 'error', 'message': 'Join a private room first'}); return; }
+      if (message['type'] != 'hello') { _send(session, {'type': 'error', 'message': '请先加入私密房间'}); return; }
       final room = message['roomHash']; final publicKey = message['publicKey'];
       if (message['id'] != session.id || room is! String || !RegExp(r'^[a-f0-9]{64}$', caseSensitive: false).hasMatch(room) || publicKey is! String || _tryBase64(publicKey)?.length != 32 || _tryBase64(message['auth'])?.length != 32) {
-        _send(session, {'type': 'error', 'message': 'Invalid room key or public key'}); return;
+        _send(session, {'type': 'error', 'message': '房间密钥或公钥无效'}); return;
       }
       session.roomHash = room.toLowerCase(); session.publicKey = publicKey; session.auth = message['auth'] as String;
       session.handshakeTimer?.cancel();
@@ -154,21 +155,21 @@ class RelayHost {
       case 'complete': _completeTransfer(session, message); break;
       case 'verified': _verifyTransfer(session, message); break;
       case 'cancel': _cancelForClient(session, message); break;
-      default: _send(session, {'type': 'error', 'message': 'Unsupported operation'});
+      default: _send(session, {'type': 'error', 'message': '不支持的操作'});
     }
   }
 
   void _createGroup(_Session owner, Map<String, dynamic> message) {
     final requested = (message['members'] as List? ?? const []).whereType<String>().toSet()..remove(owner.id);
     if (requested.length > 50 || requested.any((id) => _sessions[id] == null || _sessions[id]!.roomHash != owner.roomHash)) {
-      _send(owner, {'type': 'error', 'message': 'Group members must be online in the same private room'}); return;
+      _send(owner, {'type': 'error', 'message': '群组成员必须在线并位于同一私密房间'}); return;
     }
     if (_groups.length >= 256) {
-      _send(owner, {'type': 'error', 'message': 'Relay group capacity reached'});
+      _send(owner, {'type': 'error', 'message': '中继群组数量已达上限'});
       return;
     }
     final id = _uuid();
-    final group = _RoomGroup(id, _clean(message['name'], max: 48, fallback: 'LAN group'), owner.id, owner.roomHash)..members.add(owner.id)..invitees.addAll(requested);
+    final group = _RoomGroup(id, _clean(message['name'], max: 48, fallback: '局域网群组'), owner.id, owner.roomHash)..members.add(owner.id)..invitees.addAll(requested);
     _groups[id] = group;
     for (final memberId in requested) {
       final member = _sessions[memberId]!;
@@ -209,40 +210,60 @@ class RelayHost {
 
   void _createTransfer(_Session sender, Map<String, dynamic> message) {
     final id = message['transferId'];
+    final requestedMode = message['mode'];
+    final strict = requestedMode == null || requestedMode == 'strict';
+    final validMode = requestedMode == null || requestedMode == 'strict' || requestedMode == 'speed';
     final recipientIds = (message['recipients'] as List? ?? const []).whereType<String>().toSet();
     final rawFiles = (message['files'] as List? ?? const []).whereType<Map>().map((e) => Map<String, dynamic>.from(e)).toList();
     final rawEnvelopes = message['keyEnvelopes'];
     final envelopes = rawEnvelopes is Map ? Map<String, dynamic>.from(rawEnvelopes) : <String, dynamic>{};
-    if (id is! String || !isValidUuidV4(id) || recipientIds.isEmpty || recipientIds.length > 50 || rawFiles.isEmpty || rawFiles.length > maxTransferFiles) {
-      _send(sender, {'type': 'transfer-error', 'transferId': id, 'message': 'Invalid transfer manifest'}); return;
+    if (!validMode || id is! String || !isValidUuidV4(id) || recipientIds.isEmpty || recipientIds.length > 50 || rawFiles.isEmpty || rawFiles.length > maxTransferFiles) {
+      _send(sender, {'type': 'transfer-error', 'transferId': id, 'message': '传输清单无效'}); return;
     }
     final recipients = recipientIds.map((id) => _sessions[id]).toList();
     if (recipientIds.contains(sender.id) || recipients.any((peer) => peer == null || peer.roomHash != sender.roomHash)) {
-      _send(sender, {'type': 'transfer-error', 'transferId': id, 'message': 'Recipient is offline or outside this room'}); return;
+      _send(sender, {'type': 'transfer-error', 'transferId': id, 'message': '接收方离线或不在此房间'}); return;
     }
     var total = 0;
     final files = <Map<String, dynamic>>[];
     for (final file in rawFiles) {
       final size = file['size'];
       if (size is! int || size < 0 || size > maxFileBytes) {
-        _send(sender, {'type': 'transfer-error', 'transferId': id, 'message': 'Invalid file metadata'}); return;
+        _send(sender, {'type': 'transfer-error', 'transferId': id, 'message': '文件元数据无效'}); return;
       }
       total += size;
-      files.add({'size': size});
-    }
-    if (total > maxTransferBytes || _transfers.length >= 256 || _transfers.containsKey(id)) {
-      _send(sender, {'type': 'transfer-error', 'transferId': id, 'message': 'Transfer exceeds the limit or duplicates an active ID'}); return;
-    }
-    for (final peerId in recipientIds) {
-      final envelope = envelopes[peerId];
-      if (envelope is! Map || _tryBase64(envelope['nonce'])?.length != 12 || (_tryBase64(envelope['ciphertext'])?.length ?? 0) < 48 || (_tryBase64(envelope['ciphertext'])?.length ?? 0) > 1024 * 1024) {
-        _send(sender, {'type': 'transfer-error', 'transferId': id, 'message': 'Invalid recipient key envelope'}); return;
+      if (strict) {
+        files.add({'size': size});
+      } else {
+        final name = file['name'];
+        final relativePath = file['relativePath'];
+        final sha256 = file['sha256'];
+        if (name is! String || name.length > 255 || relativePath is! String || !isValidSha256(sha256 is String ? sha256 : '')) {
+          _send(sender, {'type': 'transfer-error', 'transferId': id, 'message': '高速传输元数据无效'}); return;
+        }
+        try { validateRelativePath(relativePath); } catch (_) {
+          _send(sender, {'type': 'transfer-error', 'transferId': id, 'message': '高速传输路径无效'}); return;
+        }
+        files.add({'name': name, 'relativePath': relativePath, 'size': size, 'sha256': sha256});
       }
     }
-    final transfer = _PendingTransfer(id: id, senderId: sender.id, recipients: recipientIds, files: files, envelopes: envelopes);
-    transfer.timer = Timer(const Duration(minutes: 2), () => _cancelTransfer(transfer, 'Recipient approval timed out'));
+    if (total > maxTransferBytes || _transfers.length >= 256 || _transfers.containsKey(id)) {
+      _send(sender, {'type': 'transfer-error', 'transferId': id, 'message': '传输超过限制或传输编号重复'}); return;
+    }
+    if (strict) {
+      for (final peerId in recipientIds) {
+        final envelope = envelopes[peerId];
+        if (envelope is! Map || _tryBase64(envelope['nonce'])?.length != 12 || (_tryBase64(envelope['ciphertext'])?.length ?? 0) < 48 || (_tryBase64(envelope['ciphertext'])?.length ?? 0) > 1024 * 1024) {
+          _send(sender, {'type': 'transfer-error', 'transferId': id, 'message': '接收方密钥封装无效'}); return;
+        }
+      }
+    }
+    final transfer = _PendingTransfer(id: id, senderId: sender.id, recipients: recipientIds, files: files, envelopes: envelopes, strict: strict);
+    transfer.timer = Timer(const Duration(minutes: 2), () => _cancelTransfer(transfer, '等待接收方确认超时'));
     _transfers[id] = transfer;
-    for (final peer in recipients.cast<_Session>()) _send(peer, {'type': 'incoming-request', 'transferId': id, 'sender': sender.toJson(), 'files': files});
+    for (final peer in recipients.cast<_Session>()) {
+      _send(peer, {'type': 'incoming-request', 'transferId': id, 'sender': sender.toJson(), 'mode': strict ? 'strict' : 'speed', 'files': files});
+    }
     _send(sender, {'type': 'transfer-state', 'transferId': id, 'state': 'waiting'});
   }
 
@@ -253,28 +274,40 @@ class RelayHost {
     _send(_sessions[transfer.senderId], {'type': 'recipient-decision', 'transferId': transfer.id, 'peerId': peer.id, 'name': peer.name, 'accepted': message['accept'] == true});
     if (transfer.pending.isNotEmpty) return;
     transfer.timer?.cancel();
-    if (transfer.accepted.isEmpty) { _cancelTransfer(transfer, 'No recipient accepted'); return; }
+    if (transfer.accepted.isEmpty) { _cancelTransfer(transfer, '没有接收方接受'); return; }
     transfer.started = true;
     _send(_sessions[transfer.senderId], {'type': 'transfer-ready', 'transferId': transfer.id, 'accepted': transfer.accepted.map((id) => _sessions[id]?.toJson()).whereType<Map<String, dynamic>>().toList()});
-    for (final id in transfer.accepted) _send(_sessions[id], {'type': 'transfer-start', 'transferId': transfer.id, 'sender': _sessions[transfer.senderId]?.toJson(), 'files': transfer.files, 'keyEnvelope': transfer.envelopes[id]});
-    transfer.timer = Timer(const Duration(hours: 2), () => _cancelTransfer(transfer, 'Transfer expired'));
+    for (final id in transfer.accepted) {
+      _send(_sessions[id], {
+        'type': 'transfer-start',
+        'transferId': transfer.id,
+        'sender': _sessions[transfer.senderId]?.toJson(),
+        'mode': transfer.strict ? 'strict' : 'speed',
+        'files': transfer.files,
+        if (transfer.strict) 'keyEnvelope': transfer.envelopes[id],
+      });
+    }
+    transfer.timer = Timer(const Duration(hours: 2), () => _cancelTransfer(transfer, '传输已过期'));
   }
 
   void _routeChunk(_Session sender, List<int> frame) {
-    if (frame.length < 4 + 2 + 12 + 16 || frame.length > maxChunkBytes + 2048 + 32) return;
+    if (frame.length < 5 || frame.length > maxChunkBytes + 2048 + 32) return;
     final view = ByteData.sublistView(Uint8List.fromList(frame));
     final metaLength = view.getUint32(0, Endian.big);
-    if (metaLength > 2048 || 4 + metaLength + 28 > frame.length || frame.length - (4 + metaLength + 28) > maxChunkBytes) return;
+    if (metaLength > 2048 || 4 + metaLength >= frame.length) return;
     Map<String, dynamic> meta;
     try { meta = Map<String, dynamic>.from(jsonDecode(utf8.decode(frame.sublist(4, 4 + metaLength))) as Map); } catch (_) { return; }
     final transfer = _transfers[meta['transferId']];
     final index = meta['fileIndex']; final sequence = meta['seq'];
-    if (transfer == null || !transfer.started || transfer.senderId != sender.id || index is! int || index < 0 || index >= transfer.files.length || sequence is! int || sequence < 0) return;
+    final mode = meta['mode'];
+    if (transfer == null || !transfer.started || transfer.senderId != sender.id || index is! int || index < 0 || index >= transfer.files.length || sequence is! int || sequence < 0 || mode != (transfer.strict ? 'strict' : 'speed')) return;
+    final overhead = transfer.strict ? 28 : 0;
+    if (4 + metaLength + overhead >= frame.length) return;
     final expectedSequence = transfer.nextSequence[index] ?? 0;
-    final plaintextLength = frame.length - (4 + metaLength + 28);
+    final payloadLength = frame.length - (4 + metaLength + overhead);
     final fileSize = transfer.files[index]['size'] as int;
-    final nextFileBytes = (transfer.forwardedBytes[index] ?? 0) + plaintextLength;
-    if (sequence != expectedSequence || transfer.waitingAcks.length >= 8 || plaintextLength <= 0 || nextFileBytes > fileSize) return;
+    final nextFileBytes = (transfer.forwardedBytes[index] ?? 0) + payloadLength;
+    if (sequence != expectedSequence || transfer.waitingAcks.length >= 8 || payloadLength <= 0 || payloadLength > maxChunkBytes || nextFileBytes > fileSize) return;
     final ackKey = '$index:$sequence';
     if (transfer.waitingAcks.containsKey(ackKey)) return;
     transfer.nextSequence[index] = expectedSequence + 1;
@@ -304,7 +337,7 @@ class RelayHost {
     if (transfer == null || !transfer.started || transfer.senderId != sender.id || transfer.waitingAcks.isNotEmpty || transfer.senderCompleted) return;
     for (var index = 0; index < transfer.files.length; index++) {
       if ((transfer.forwardedBytes[index] ?? 0) != transfer.files[index]['size']) {
-        _cancelTransfer(transfer, 'Sender ended before all declared file bytes were delivered');
+        _cancelTransfer(transfer, '发送方未传完声明的文件数据');
         return;
       }
     }
@@ -312,13 +345,13 @@ class RelayHost {
     transfer.awaitingVerification.addAll(transfer.accepted);
     for (final id in transfer.accepted) _send(_sessions[id], {'type': 'transfer-complete', 'transferId': transfer.id});
     transfer.timer?.cancel();
-    transfer.timer = Timer(const Duration(hours: 12), () => _cancelTransfer(transfer, 'Recipient integrity confirmation timed out'));
+    transfer.timer = Timer(const Duration(hours: 12), () => _cancelTransfer(transfer, '等待接收方完整性确认超时'));
   }
 
   void _verifyTransfer(_Session recipient, Map<String, dynamic> message) {
     final transfer = _transfers[message['transferId']];
     if (transfer == null || !transfer.senderCompleted || !transfer.awaitingVerification.remove(recipient.id) || !transfer.accepted.contains(recipient.id)) return;
-    if (message['ok'] != true) { _cancelTransfer(transfer, 'A recipient failed final integrity verification'); return; }
+    if (message['ok'] != true) { _cancelTransfer(transfer, '接收方最终完整性校验失败'); return; }
     if (transfer.awaitingVerification.isEmpty) {
       _send(_sessions[transfer.senderId], {'type': 'transfer-finished', 'transferId': transfer.id});
       transfer.timer?.cancel(); _transfers.remove(transfer.id);
@@ -347,8 +380,8 @@ class RelayHost {
       }
     }
     for (final transfer in _transfers.values.toList()) {
-      if (transfer.senderId == session.id) _cancelTransfer(transfer, 'Sender disconnected');
-      else if (transfer.recipients.contains(session.id)) _cancelTransfer(transfer, 'Recipient disconnected');
+      if (transfer.senderId == session.id) _cancelTransfer(transfer, '发送方已断开');
+      else if (transfer.recipients.contains(session.id)) _cancelTransfer(transfer, '接收方已断开');
     }
     if (session.joined) _broadcastPeers(session.roomHash);
   }

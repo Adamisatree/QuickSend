@@ -65,5 +65,6 @@ class TransferProgress {
   double get fraction => totalBytes == 0 ? 1 : (received / totalBytes).clamp(0, 1);
 }
 
+enum TransferMode { strict, speed }
 enum TransferState { waiting, running, finished, failed }
 enum RoomConnectionState { disconnected, connecting, connected }

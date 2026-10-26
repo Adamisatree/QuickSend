@@ -1,28 +1,25 @@
-# QuickSend v1.1 protocol review (internal source review)
+# QuickSend v2.0 安全审查记录（初步）
 
-**Status: preliminary hardening review; not an independent audit or release approval.** Reviewed the Flutter client and in-process LAN relay on 2026-10-26. Regression coverage was run in CI, but no physical-device, hostile-network, fuzz, penetration, or third-party cryptographic review was performed.
+**状态：开发阶段的源码检查，不是独立安全审计，也不是发布批准。** v2.0 代码通过 Flutter 分析、自动化测试与平台 CI 构建（<https://github.com/Adamisatree/QuickSend/actions/runs/40293524140>），Node CI 通过（<https://github.com/Adamisatree/QuickSend/actions/runs/40293524141>）。没有进行真实设备、恶意网络、模糊测试、渗透测试或第三方密码学审查；CI 不证明设备行为。
 
-## Findings addressed in this branch
+## 设计与数据暴露
 
-| Severity | Finding | Mitigation |
-|---|---|---|
-| High | An untrusted transfer identifier was used as a received-files directory component. | Accept only UUID v4 IDs before creating a destination. Existing destinations are rejected; new output files are created exclusively. |
-| High | The receiver could append authenticated chunks beyond the declared file size until final verification, consuming disk. | Enforce per-chunk and cumulative per-file limits at the receiver; the relay also counts and bounds each file's forwarded bytes and requires an exact byte total before completion. |
-| High | File paths were normalized by removing unsafe segments, which could cause traversal or silent name collisions across OSes. | Validate rather than rewrite paths; reject absolute paths, traversal, control characters, Windows device names, non-portable segments, and case-insensitive collisions. |
-| Medium | Relay sessions, control traffic, pending transfers, and unacknowledged chunks had no aggregate bounds. | Limit sessions, JSON size, per-session control-message rate, groups, active transfers, and in-flight chunks; expire incomplete handshakes. These are abuse limits, not a guarantee against a hostile LAN peer. |
-| Medium | A peer closing during relay fan-out could throw from `WebSocket.add` into an unhandled asynchronous callback. | Catch send failures and close the stale socket quietly; add a two-peer relay regression test. |
-| Medium | Interrupted or failed receives could leave partial files behind. | Remove partial transfer directories on cancellation, disconnect, or failed integrity verification. |
+- **严格保密模式**：文件内容、文件名、相对路径和 SHA-256 清单由发送端加密后交付接收端。中继仍可看到设备/IP、传输时序、文件个数与大小以及群组/聊天相关元数据。
+- **高速模式**：分块文件内容以明文经过 LAN WebSocket 中继，文件名、路径、大小和 SHA-256 清单亦由中继处理。处于同一网络且能观察流量的参与者/监听者可能读取文件；恶意中继能够修改数据及公开清单，因此接收端 SHA-256 校验不能构成对此类攻击者的端到端真实性保证。此模式不能用于敏感数据。
+- **自动发现**：UDP 广播中的设备名称、IPv4 来源地址和中继端口未认证，可能被伪造或观察，仅用于发现候选主机。加入房间仍须输入房间密钥并通过客户端的身份校验。UDP 广播本身不建立信任。
+- **传输**：严格模式使用临时 X25519 密钥、HKDF、ChaCha20-Poly1305 加密信封与数据块；接收方每次需批准。高速模式跳过文件内容加密，不应在 UI 或文档中描述为端到端保密。
 
-Tests cover transfer-ID and path policy, malformed auth-tag encoding, rejected invalid transfer IDs, and a relay attempt to exceed a declared one-byte file. The complete Flutter matrix and Node suite passed in [Flutter run 40267805610](https://github.com/Adamisatree/QuickSend/actions/runs/40267805610) and [Node run 40267805113](https://github.com/Adamisatree/QuickSend/actions/runs/40267805113).
+## 主要未解决风险
 
-## Open risks and release blockers
+1. **弱房间密钥可离线猜测**：房间标识为共享密钥的 SHA-256 摘要，身份认证 HMAC 来源于同一密钥。捕获流量后可离线猜测。建议生成高熵随机密钥；12 字符的输入下限不是熵保证。没有 PAKE 或内存困难 KDF。
+2. **明文网络与中继元数据**：传输使用 `ws://`。高速模式的文件内容为明文；严格模式也暴露地址、名称、大小、时间和群组元数据。LAN 上的 TLS/中继认证尚未实现。
+3. **未认证 UDP 发现**：广播可以被伪造、重放或洪泛；客户端只展示候选设备名称/IP，不能据此确认真实身份。手动输入 IP 是可用回退，但也不验证服务器证书。
+4. **中继信任和可用性**：中继可拒绝服务、丢弃/延迟数据或观察其能看到的元数据。严格模式客户端需要校验端到端认证，但高速模式的公开清单和 SHA-256 无法抵御能同时修改清单与内容的恶意中继。
+5. **资源耗尽**：房间成员可发起达到实现上限的大型传输。没有可靠的跨平台空间预留、每用户配额、持久队列或管理策略。限流和硬上限不等于抵御恶意 LAN 用户。
+6. **文件系统竞态**：路径检查和独占创建降低路径穿越/覆盖风险，但没有使用每个平台的目录句柄/openat 类机制消除恶意本地进程造成的全部路径竞态。
+7. **生命周期**：断线/进程退出后不支持恢复。Android 前台服务、iOS 后台传输与桌面托盘尚未实现；移动设备应保持应用在前台。
+8. **身份和签名**：设备身份每次连接临时生成，没有长期身份、撤销、证书固定、密钥轮换或托管信任库。Windows/macOS/iOS/Android 生产签名均未配置。
 
-1. **Room-key guessing:** the room identifier is an unsalted SHA-256 of the shared room key, and peer authentication is an HMAC derived from that key. Captured traffic permits offline guesses. The UI can generate a 32-character random key, but the 12-character manual-input minimum does not provide an entropy guarantee. There is no PAKE or memory-hard password KDF.
-2. **Transport metadata:** the relay uses plain `ws://`. LAN observers can see IP addresses, names, group metadata, file sizes, timing, and chat sender/timestamp metadata. End-to-end encryption protects file contents, paths, digests, and chat text, but does not hide that traffic pattern.
-3. **Relay trust/availability:** the relay is unauthenticated and can deny service, drop/reorder application messages, or expose metadata. Clients verify peer HMACs before transfer, but server-side auth is only format-checked because the relay does not know the room secret.
-4. **Resource exhaustion:** authenticated room participants can request transfers up to the prototype's 500 GiB limit. There is no reliable cross-platform free-space reservation, per-user quota, durable queue, or administrator policy. Recipients must approve each transfer and should not accept untrusted peers.
-5. **Local filesystem race:** lexical path validation and exclusive creation reduce traversal and overwrite risk, but this implementation does not use platform-specific directory handles/openat-style APIs to make every nested path operation race-free against a hostile local process.
-6. **Lifecycle:** transfers do not resume after reconnect or process termination. Android foreground-service behavior, iOS background transfers, and desktop tray operation are not implemented. Do not assume transfers continue when the OS suspends the app.
-7. **Identity and code signing:** peer identities are ephemeral per connection, with no persistent device identity, revocation, certificate pinning, key rotation, or managed trust store. Android production signing and Apple signing/notarization are not configured.
+## 后续审查要求
 
-Before a stable release, an independent reviewer should assess the key schedule, room membership/authentication model, nonce/replay guarantees, protocol state transitions, filesystem behavior on each OS, and resource limits. Real-device transfer and install tests, plus properly provisioned signing identities, are still required.
+独立审查应覆盖密钥派生、房间成员与身份模型、nonce/重放、协议状态机、严格/高速模式安全语义、UDP 发现和欺骗/洪泛风险、文件系统与资源限制，并在 Android、iOS、Windows、macOS、Linux 上开展真实 LAN 测试。未完成前，不应称为稳定或生产就绪版本。

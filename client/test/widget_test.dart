@@ -5,7 +5,7 @@ void main() {
   testWidgets('renders the native QuickSend dashboard', (tester) async {
     await tester.pumpWidget(const QuickSendApp());
     await tester.pump();
-    expect(find.text('Send files'), findsWidgets);
-    expect(find.text('Connect devices'), findsOneWidget);
+    expect(find.text('发送文件'), findsWidgets);
+    expect(find.text('连接设备'), findsOneWidget);
   });
 }

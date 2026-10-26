@@ -1,44 +1,42 @@
-# QuickSend Native (v1.1 development)
+# QuickSend 原生客户端（v2.0 开发中）
 
-The Flutter client replaces the old web-rendered interface with a Material 3 native UI. This is an in-progress v1.1 implementation; it has **not** been signed, released, or validated as production-ready on every target architecture.
+QuickSend 面向可信局域网，使用 Flutter 原生界面，帮助设备通过名称发现中继、加入私密房间、创建群组聊天并发送文件。此分支正在实现 v2.0；尚未发布，也未完成真实设备验证。
 
-## Implemented in this branch
+## 功能
 
-- Native Flutter dashboard for file selection, device selection, chat, incoming approvals, and transfer progress.
-- A temporary, in-process LAN WebSocket relay. One device starts it; others enter its IP and port. Devices must use the same private room key.
-- Ephemeral X25519 keys authenticated by an HMAC derived from the room key; per-transfer keys are delivered in X25519/HKDF/ChaCha20-Poly1305 envelopes. File names and SHA-256 manifest are inside the encrypted envelope. Chunk payloads use fresh nonces and are authenticated before writing.
-- Receiver approval/rejection, 256 KiB encrypted chunks, an eight-chunk acknowledgement window for backpressure, and final SHA-256 verification. Transfer is lossless or fails closed; there is no lossy media compression.
-- Recursive folder selection (files and relative paths), encrypted group-chat messages, online peer listing with IPs, group invitations, and in-memory group history.
-- Received files are placed under the app documents directory at `QuickSend/Received/<transfer-id>` and can be shared from the transfer screen.
+- UDP 局域网广播发现正在运行的 QuickSend 中继（默认 UDP 4322）；可点选设备，也可手动输入 IPv4 地址。
+- 一台设备启动临时 WebSocket 中继（默认 TCP 4321），其他设备输入同一随机房间密钥加入。中继只在当前进程运行期间有效。
+- 设备名称、在线设备列表、群组邀请、群聊和文件/文件夹传输。
+- 每次发送可选一种模式：
+  - **严格保密**：文件内容以及文件名、目录路径和 SHA-256 清单通过端到端加密保护；传输元数据与文件大小仍会暴露给局域网中继。
+  - **高速传输**：跳过文件内容加密，明文内容经过局域网中继；同一网络中的中继或监听者可能读取文件。仅在可信网络使用。接收端仍会根据传输清单校验大小和 SHA-256，但在此模式下，清单本身也由中继转发，不能视为对抗恶意中继的端到端完整性保证。
+- 接收方必须逐次批准传输。严格模式使用 X25519/HKDF/ChaCha20-Poly1305 密钥封装与分块加密；传输有大小、路径和资源限制。
+- 文件保存到应用文档目录 `QuickSend/Received/<transfer-id>`，并可从传输记录分享。
 
-## Run locally
+## 运行与构建
 
-Install a current stable Flutter SDK, then:
+安装 Flutter stable SDK 后：
 
 ```sh
 cd client
 ./tool/bootstrap_platforms.sh
 flutter pub get
-flutter analyze
+flutter analyze --no-fatal-infos
 flutter test
 flutter run -d <device>
 ```
 
-The bootstrap script generates Flutter's native runner projects. It does not sign or provision iOS. Android and iOS require their normal SDKs; iOS release distribution requires an Apple Developer team and signing profiles.
+同一 Wi-Fi/有线局域网内运行时，系统防火墙需允许 TCP 4321 与 UDP 4322；如果自动发现受路由器或操作系统限制，请手动填写中继设备 IP。自动广播中的设备名称和地址未经身份认证，只用于发现；连接仍需私密房间密钥并完成身份验证。访客网络隔离、客户端隔离、VPN、防火墙或不同子网可能阻止发现/连接。此应用不提供互联网中继或端口穿透。
 
-## Security notes
+`bootstrap_platforms.sh` 会生成原生 runner 项目，并设置 Android 网络权限与 iOS 局域网用途说明。它不会签署应用或配置 iOS provisioning。
 
-- Choose a **long, random room key** and deliver it out-of-band. A weak room key can be guessed offline because the room identifier is a SHA-256 digest. The app enforces 12 characters but that is only a minimum, not a recommendation.
-- The relay is plain `ws://` on the LAN and can observe peer names/IPs, transfer sizes/timing, group metadata, and chat sender/time metadata. Chat text, filenames, folder paths, file digests, and file contents are encrypted end-to-end. The relay can deny service or withhold data; it cannot make tampered chunks pass authentication/integrity checks.
-- This implementation is a new protocol and has **not** received an independent security review. Do not use it for regulated or high-risk data yet. No persistent identity, certificate pinning, key recovery, or safe resume after app restart is implemented. A source-level hardening pass now validates transfer UUIDs and cross-platform paths, caps relay control-message/peer/group/transfer resources, verifies file digests, and rejects chunks exceeding the declared file size; these checks do not replace a cryptographic protocol audit.
-- Sharing a room key gives room members the ability to authenticate as a member; do not use a shared room with untrusted participants.
+## 安全与发布限制
 
-## Platform and background status
+- 只与可信的人在可信的局域网中使用。使用随机生成的长房间密钥并通过其他私密渠道分享；手动输入密钥的最低长度不是安全强度保证。
+- 严格保密模式加密文件内容与名称/路径，但纯 `ws://` 中继仍可观察地址、设备/群组元数据、大小和时间信息，并可拒绝服务。高速模式会把文件内容以明文交给中继。
+- 这是自研协议，未经过独立安全审计；尚无设备长期身份、撤销、可靠恢复或断点续传。
+- CI 测试和编译只能证明对应环境中的代码检查、测试与构建通过，不能证明真实设备间发现、安装、传输、移动后台行为或存储空间处理正确。
+- 未配置发布者拥有的 Windows/macOS/iOS/Android 生产签名凭据。不要把未签名/测试包称为生产就绪版本；iOS 发布需 Apple 团队与 provisioning profile。
+- Android/iOS 后台持续传输尚未实现；请让移动应用保持前台。桌面端无系统托盘服务。
 
-The Flutter project can generate runners for Windows, macOS, Linux, Android, and iOS. CI release builds have passed on native runners for Windows x64/ARM64, macOS Intel/Apple Silicon, Linux x64/ARM64, Android APK, and unsigned iOS. This is compile-time validation only: clean-machine installation and physical-device transfer testing remain open. macOS signing/notarization, iOS provisioning, and production Android signing are not configured.
-
-The relay runs while the process is alive. Desktop minimize keeps the process alive, but there is no system-tray service yet. Android foreground-service integration and iOS background transfer support are not implemented. Mobile operating systems can suspend/terminate a background app; iOS especially does not guarantee continuous arbitrary LAN socket work. Treat mobile transfers as foreground-only in this development build.
-
-## Limits in this prototype
-
-One transfer is limited to 100 files and 500 GiB total; individual files are capped at 100 GiB. The server buffers no file payload to disk but keeps group history in memory. Folder empty directories, persistent chat history, automatic device discovery, retries after reconnect, partial resume, and internet relay traversal are not implemented. Internet access requires users to configure routing/firewalls themselves and is not recommended with this unauthenticated plain-WebSocket relay.
+v2.0 发布前仍需完成：Flutter 多平台 CI、真实 LAN 设备间发现/连接/严格与高速传输测试、清洁环境安装测试、权限与防火墙测试、独立安全审查，以及发布状态和签名限制的明确说明。当前开发容器没有本地 Flutter/Dart SDK，必须用 CI 进行代码验证。
