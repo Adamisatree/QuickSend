@@ -158,6 +158,7 @@ jobs:
           $compileExitCode = $LASTEXITCODE
           $compileOutput | ForEach-Object { Write-Host $_ }
           if ($compileExitCode -ne 0) {
+            Write-Host "::error title=Inno Setup::Exit code $compileExitCode; compiler $iscc; target $env:TARGET_ARCH; bundle $bundle"
             foreach ($line in $compileOutput) {
               $safe = ([string]$line) -replace '%', '%25' -replace '\r', '%0D' -replace '\n', '%0A'
               Write-Host "::error title=Inno Setup::$safe"
