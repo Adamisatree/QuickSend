@@ -1,14 +1,14 @@
-name: Publish QuickSend v2.0 preview
+name: Publish QuickSend v2.1 preview
 
 on:
   push:
-    tags: ['v2.0.0']
+    tags: ['v2.1.0']
 
 permissions:
   contents: read
 
 concurrency:
-  group: quicksend-v2-release
+  group: quicksend-v2.1-release
   cancel-in-progress: false
 
 jobs:
@@ -84,6 +84,9 @@ jobs:
       - name: Install Linux desktop prerequisites
         if: runner.os == 'Linux' && matrix.target != 'android-apk'
         run: sudo apt-get update && sudo apt-get install -y clang cmake ninja-build pkg-config libgtk-3-dev liblzma-dev
+      - name: Install Inno Setup compiler
+        if: startsWith(matrix.target, 'windows-')
+        run: choco install innosetup -y --no-progress
       - uses: actions/setup-java@v6
         if: matrix.target == 'android-apk'
         with:
@@ -120,13 +123,15 @@ jobs:
       - name: Build Android release APK
         if: matrix.target == 'android-apk'
         run: flutter build apk --release
-      - name: Package Linux release archive
+      - name: Package Debian installer
         if: startsWith(matrix.target, 'linux-')
         run: |
           mkdir -p release-assets
-          tar -C "build/linux/${{ matrix.flutter_arch }}/release/bundle" -czf \
-            "release-assets/QuickSend-${GITHUB_REF_NAME}-${{ matrix.target }}.tar.gz" .
-      - name: Package Windows release archive
+          version="${GITHUB_REF_NAME#v}"
+          bash tool/package_deb.sh \
+            "build/linux/${{ matrix.flutter_arch }}/release/bundle" \
+            "$version" "${{ matrix.flutter_arch }}" release-assets
+      - name: Build Windows installer
         if: startsWith(matrix.target, 'windows-')
         shell: pwsh
         env:
@@ -136,8 +141,14 @@ jobs:
           if (-not (Test-Path $bundle)) { throw "Missing Windows release bundle: $bundle" }
           if (-not (Get-ChildItem $bundle -Filter '*.exe' -File)) { throw "No executable found in $bundle" }
           New-Item -ItemType Directory -Force -Path 'release-assets' | Out-Null
-          $archive = "release-assets/QuickSend-$env:GITHUB_REF_NAME-windows-$env:TARGET_ARCH.zip"
-          Compress-Archive -Path (Join-Path $bundle '*') -DestinationPath $archive -Force
+          $version = $env:GITHUB_REF_NAME -replace '^v', ''
+          $isccCandidates = @()
+          if (${env:ProgramFiles(x86)}) { $isccCandidates += (Join-Path ${env:ProgramFiles(x86)} 'Inno Setup 6/ISCC.exe') }
+          if ($env:ProgramFiles) { $isccCandidates += (Join-Path $env:ProgramFiles 'Inno Setup 6/ISCC.exe') }
+          $iscc = $isccCandidates | Where-Object { Test-Path $_ } | Select-Object -First 1
+          if (-not $iscc) { throw "Inno Setup compiler not found in Program Files" }
+          & $iscc "/DAppVersion=$version" "/DTargetArch=$env:TARGET_ARCH" "/DBundleDir=$bundle" 'tool/windows-installer.iss'
+          if ($LASTEXITCODE -ne 0) { throw "Inno Setup failed with exit code $LASTEXITCODE" }
       - name: Package macOS disk image
         if: startsWith(matrix.target, 'macos-')
         env:
@@ -145,8 +156,10 @@ jobs:
         run: |
           app_bundle=$(find build/macos/Build/Products/Release -maxdepth 1 -name '*.app' -print -quit)
           test -n "$app_bundle"
-          mkdir -p release-assets
-          hdiutil create -volname "QuickSend ${GITHUB_REF_NAME}" -srcfolder "$app_bundle" -ov -format UDZO \
+          mkdir -p release-assets dmg-staging
+          cp -R "$app_bundle" dmg-staging/QuickSend.app
+          ln -s /Applications dmg-staging/Applications
+          hdiutil create -volname "QuickSend ${GITHUB_REF_NAME}" -srcfolder dmg-staging -ov -format UDZO \
             "release-assets/QuickSend-${GITHUB_REF_NAME}-macos-${TARGET_ARCH}.dmg"
       - name: Stage Android APK
         if: matrix.target == 'android-apk'
@@ -180,26 +193,23 @@ jobs:
         uses: softprops/action-gh-release@v2
         with:
           tag_name: ${{ github.ref_name }}
-          name: QuickSend ${{ github.ref_name }} — Preview
+          name: QuickSend ${{ github.ref_name }} — 预览版
           prerelease: true
           make_latest: false
           generate_release_notes: true
           files: release-assets/*
           body: |
-            **QuickSend v2.0 preview — not a stable or production-qualified release.**
+            **QuickSend v2.1.0 预览版——非稳定版，尚非生产就绪。**
 
-            Chinese-language Flutter client for LAN device discovery, private groups/chat, and file transfers. Includes Linux x64/ARM64 archives, Windows x64/ARM64 bundles, macOS Intel/Apple Silicon disk images, and an Android APK.
+            包含中文 Flutter 客户端、可配置接收目录、传输完成后的路径显示/桌面端打开文件夹。Windows 提供安装程序 EXE，Linux 提供 DEB 安装包，macOS 提供带“应用程序”快捷方式的 DMG，另含 Android APK。
 
-            Transfer modes:
-            - Strict confidentiality encrypts file contents and names end-to-end; LAN relay metadata and file sizes remain visible.
-            - Speed mode sends file contents in plaintext through the LAN relay. Use only on a trusted network; do not use for sensitive or regulated files.
+            安全提示：严格保密模式对文件内容和名称端到端加密，但中继仍能看到文件大小等元数据。高速模式的文件内容会以明文通过局域网中继，仅限可信网络，切勿用于敏感文件。
 
-            Limitations:
-            - Windows and macOS packages are unsigned; expect OS security warnings. Windows ZIPs contain app/runtime files, not an installer.
-            - Android is not signed with a production upload key and is not for Play Store distribution.
-            - iOS is omitted because no publisher-owned signing identity/provisioning profile is configured.
-            - Real-device LAN discovery, installation, and transfer testing is incomplete; CI compilation does not prove device behavior. No independent security audit has been completed.
-            - Mobile background transfer is not implemented. UDP discovery can be blocked by firewall, guest Wi-Fi isolation, VPNs, or subnet boundaries; manual IP entry is available.
-            - Use only with trusted people on a trusted LAN and a generated high-entropy room key.
+            限制：
+            - Windows/macOS 安装包未签名，系统可能显示安全警告；Android APK 未使用生产签名密钥，不能用于 Play 商店发布。
+            - 因未配置发布者的 Apple 签名身份和配置文件，不提供 iOS 包。
+            - CI 构建并不代表真实设备已验证；LAN 发现、安装与传输的实机测试仍未完成，且尚无独立安全审计。
+            - 尚未实现移动端后台传输。防火墙、访客 Wi-Fi 隔离、VPN 或子网边界可能阻止 UDP 自动发现，可手动填写 IP。
+            - 请仅在可信局域网与可信对象间使用，并使用高熵随机房间密钥。
 
-            `SHA256SUMS` lists the published file checksums.
+            `SHA256SUMS` 列出了所有发布文件的校验值。

@@ -9,6 +9,7 @@ import 'package:cryptography/cryptography.dart';
 import 'package:flutter/foundation.dart';
 import 'package:path/path.dart' as p;
 import 'package:path_provider/path_provider.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 import 'package:web_socket_channel/web_socket_channel.dart';
 
 import 'models.dart';
@@ -43,6 +44,8 @@ class _Receiving {
 }
 
 class ClientController extends ChangeNotifier {
+  static const _receiveDirectoryPreference = 'quicksend.receiveDirectory.v1';
+
   ClientController() : _relayHost = RelayHost() {
     _discovery = LanDiscovery(onDevicesChanged: (devices) { discoveredDevices = devices; notifyListeners(); });
   }
@@ -76,11 +79,77 @@ class ClientController extends ChangeNotifier {
   final Set<String> _abortedTransfers = {};
   final List<TransferProgress> transfers = [];
   final Map<String, List<String>> savedFiles = {};
+  final Map<String, String> savedFolders = {};
+  String? receiveDirectory;
+  String? effectiveReceiveDirectory;
   Future<void> _binaryQueue = Future<void>.value();
   bool get hosting => _relayHost.isRunning;
   int get hostPort => _relayHost.boundPort;
   String get endpoint => _endpoint;
   String? get myId => _myId;
+
+  Future<void> loadReceiveDirectory() async {
+    try {
+      final preferences = await SharedPreferences.getInstance();
+      receiveDirectory = preferences.getString(_receiveDirectoryPreference);
+    } catch (e) {
+      receiveDirectory = null;
+      error = '无法读取保存位置设置：$e';
+    }
+    try {
+      effectiveReceiveDirectory = await _resolveReceiveDirectory();
+    } catch (e) {
+      effectiveReceiveDirectory = null;
+      error = '无法确定默认保存位置：$e';
+    }
+    notifyListeners();
+  }
+
+  Future<String> _resolveReceiveDirectory() async {
+    final selected = receiveDirectory;
+    if (selected != null && selected.trim().isNotEmpty) return selected;
+    // Public Downloads paths are not directly writable on all mobile OS versions.
+    if (!Platform.isAndroid && !Platform.isIOS) {
+      try {
+        final downloads = await getDownloadsDirectory();
+        if (downloads != null) return downloads.path;
+      } catch (_) {
+        // Fall back to app documents if the OS has no Downloads directory.
+      }
+    }
+    final documents = await getApplicationDocumentsDirectory();
+    return p.join(documents.path, 'Downloads');
+  }
+
+  Future<void> setReceiveDirectory(String path) async {
+    if (path.trim().isEmpty) throw const FormatException('保存目录不能为空');
+    final directory = Directory(path);
+    await directory.create(recursive: true);
+    final probe = File(p.join(directory.path, '.quicksend-write-test-${_uuid()}'));
+    try {
+      await probe.create(exclusive: true);
+      await probe.writeAsBytes(const [], flush: true);
+      await probe.delete();
+    } catch (e) {
+      try { if (await probe.exists()) await probe.delete(); } catch (_) { }
+      throw Exception('所选目录不可写：$e');
+    }
+    final preferences = await SharedPreferences.getInstance();
+    await preferences.setString(_receiveDirectoryPreference, directory.absolute.path);
+    receiveDirectory = directory.absolute.path;
+    effectiveReceiveDirectory = receiveDirectory;
+    error = null;
+    notifyListeners();
+  }
+
+  Future<void> resetReceiveDirectory() async {
+    final preferences = await SharedPreferences.getInstance();
+    await preferences.remove(_receiveDirectoryPreference);
+    receiveDirectory = null;
+    effectiveReceiveDirectory = await _resolveReceiveDirectory();
+    error = null;
+    notifyListeners();
+  }
 
   Future<void> startDiscovery() async {
     try {
@@ -529,8 +598,7 @@ class ClientController extends ChangeNotifier {
         if (!paths.add(path.toLowerCase())) throw Exception('文件清单包含重复或冲突的路径');
         item['relativePath'] = path;
       }
-      final rootDir = await getApplicationDocumentsDirectory();
-      final rootParent = Directory(p.join(rootDir.path, 'QuickSend', 'Received'));
+      final rootParent = Directory(p.join(await _resolveReceiveDirectory(), 'QuickSend', 'Received'));
       await rootParent.create(recursive: true);
       final root = p.join(rootParent.path, id);
       if (await FileSystemEntity.type(root, followLinks: false) != FileSystemEntityType.notFound) throw Exception('接收目录已存在');
@@ -607,6 +675,7 @@ class ClientController extends ChangeNotifier {
           if (hash.toString() != item['sha256']) throw Exception('SHA-256 校验失败：${item['name']}');
         }
         savedFiles[id] = receive.files.map((item) => p.joinAll([receive.root, ...p.posix.split(item['relativePath'] as String)])).toList();
+        savedFolders[id] = receive.root;
         final progress = _findTransfer(id); if (progress != null) progress.state = TransferState.finished;
         _send({'type': 'verified', 'transferId': id, 'ok': true});
       } catch (e) {
@@ -620,6 +689,25 @@ class ClientController extends ChangeNotifier {
       _pendingSend.remove(id);
     }
     _abortedTransfers.remove(id);
+    notifyListeners();
+  }
+
+  Future<void> openReceivedFolder(String id) async {
+    final folder = savedFolders[id];
+    if (folder == null) return;
+    try {
+      if (Platform.isWindows) {
+        await Process.start('explorer.exe', [folder]);
+      } else if (Platform.isMacOS) {
+        await Process.start('open', [folder]);
+      } else if (Platform.isLinux) {
+        await Process.start('xdg-open', [folder]);
+      } else {
+        error = '请使用“分享文件”将收到的文件保存到“下载”或其他位置。';
+      }
+    } catch (e) {
+      error = '无法打开保存文件夹：$e';
+    }
     notifyListeners();
   }
 
