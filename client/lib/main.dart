@@ -53,7 +53,7 @@ class _DashboardState extends State<Dashboard> {
   bool _showRoomKey = false;
   TransferMode _transferMode = TransferMode.strict;
 
-  @override void initState() { super.initState(); c.addListener(_changed); c.startDiscovery(); c.setDeviceName(_name.text); }
+  @override void initState() { super.initState(); c.addListener(_changed); c.startDiscovery(); c.loadReceiveDirectory(); c.setDeviceName(_name.text); }
   void _changed() { if (mounted) setState(() {}); }
   @override void dispose() { c.removeListener(_changed); c.dispose(); _name.dispose(); _host.dispose(); _port.dispose(); _room.dispose(); _groupName.dispose(); _chatText.dispose(); super.dispose(); }
 
@@ -92,6 +92,26 @@ class _DashboardState extends State<Dashboard> {
       ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('已从文件夹添加 ${_files.length} 个文件。')));
     } catch (e) { _toast('无法读取文件夹：$e'); }
     finally { if (mounted) setState(() => _busy = false); }
+  }
+
+  Future<void> _chooseReceiveDirectory() async {
+    final path = await FilePicker.platform.getDirectoryPath(dialogTitle: '选择文件保存文件夹');
+    if (path == null) return;
+    try {
+      await c.setReceiveDirectory(path);
+      _toast('保存位置已更新；只影响之后收到的文件。');
+    } catch (e) {
+      _toast('无法设置保存位置：$e');
+    }
+  }
+
+  Future<void> _resetReceiveDirectory() async {
+    try {
+      await c.resetReceiveDirectory();
+      _toast('已恢复默认保存位置；只影响之后收到的文件。');
+    } catch (e) {
+      _toast('无法恢复默认保存位置：$e');
+    }
   }
 
   void _addFile(String path, String name, int size, String relative) {
@@ -145,7 +165,7 @@ class _DashboardState extends State<Dashboard> {
   Widget _sidebar() => Container(width: 228, padding: const EdgeInsets.all(18), decoration: BoxDecoration(color: Theme.of(context).colorScheme.surface, border: Border(right: BorderSide(color: Theme.of(context).dividerColor.withValues(alpha: .3)))), child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
     const SizedBox(height: 4), Row(children: [Container(width: 38, height: 38, decoration: BoxDecoration(color: Theme.of(context).colorScheme.primary, borderRadius: BorderRadius.circular(12)), child: const Icon(Icons.bolt_rounded, color: Colors.white)), const SizedBox(width: 10), const Column(crossAxisAlignment: CrossAxisAlignment.start, children: [Text('QuickSend', style: TextStyle(fontSize: 18, fontWeight: FontWeight.w800)), Text('私密 · 局域网', style: TextStyle(fontSize: 9, letterSpacing: 1.4))])]),
     const SizedBox(height: 30), _navItem(0, Icons.send_rounded, '发送文件'), _navItem(1, Icons.forum_outlined, '聊天', badge: c.groups.length), _navItem(2, Icons.swap_horiz_rounded, '传输记录', badge: c.transfers.where((t) => t.state == TransferState.running).length),
-    const Spacer(), _connectionCard(), const SizedBox(height: 12), Text('v2.0 · 原生客户端', style: TextStyle(color: Theme.of(context).colorScheme.onSurfaceVariant, fontSize: 11)),
+    const Spacer(), _connectionCard(), const SizedBox(height: 12), Text('v2.1 · 原生客户端', style: TextStyle(color: Theme.of(context).colorScheme.onSurfaceVariant, fontSize: 11)),
   ]));
 
   Widget _navItem(int index, IconData icon, String label, {int badge = 0}) => Padding(padding: const EdgeInsets.only(bottom: 5), child: ListTile(selected: _tab == index, selectedTileColor: Theme.of(context).colorScheme.primaryContainer.withValues(alpha: .65), shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(13)), leading: Icon(icon), title: Text(label, style: const TextStyle(fontWeight: FontWeight.w600)), trailing: badge > 0 ? Badge(label: Text('$badge')) : null, onTap: () => setState(() => _tab = index)));
@@ -218,7 +238,18 @@ class _DashboardState extends State<Dashboard> {
 
   Future<void> _sendChat(String groupId) async { final text = _chatText.text; if (text.trim().isEmpty) return; _chatText.clear(); await c.sendChat(groupId, text); }
 
-  Widget _transfersPanel() => _section(title: '最近传输', icon: Icons.swap_horiz_rounded, child: c.transfers.isEmpty ? _emptyNote('文件传输记录会显示在这里。') : Column(children: [for (final transfer in c.transfers) _transferTile(transfer)]));
+  Widget _transfersPanel() => Column(children: [
+    _section(title: '文件保存位置', icon: Icons.folder_open_outlined, child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+      SelectableText(c.effectiveReceiveDirectory ?? '正在读取保存位置…', style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w600)),
+      const SizedBox(height: 6),
+      _emptyNote('文件会保存在此目录下的 QuickSend/Received 子文件夹。移动端默认位置可能是应用私有目录，可用传输记录中的分享按钮另存到“下载”。更改位置只影响之后收到的文件。'),
+      Wrap(spacing: 8, children: [
+        FilledButton.tonalIcon(onPressed: _chooseReceiveDirectory, icon: const Icon(Icons.drive_file_move_outline), label: const Text('更改位置')),
+        if (c.receiveDirectory != null) TextButton.icon(onPressed: _resetReceiveDirectory, icon: const Icon(Icons.restore), label: const Text('恢复系统默认')),
+      ]),
+    ])),
+    _section(title: '最近传输', icon: Icons.swap_horiz_rounded, child: c.transfers.isEmpty ? _emptyNote('文件传输记录会显示在这里。') : Column(children: [for (final transfer in c.transfers) _transferTile(transfer)])),
+  ]);
 
   Widget _transferTile(TransferProgress transfer) => Padding(
     padding: const EdgeInsets.symmetric(vertical: 9),
@@ -237,6 +268,12 @@ class _DashboardState extends State<Dashboard> {
       ]),
       const SizedBox(height: 8),
       LinearProgressIndicator(value: transfer.state == TransferState.waiting ? null : transfer.fraction, borderRadius: BorderRadius.circular(6)),
+      if (c.savedFolders.containsKey(transfer.id)) ...[
+        const SizedBox(height: 7),
+        SelectableText('保存路径：${c.savedFolders[transfer.id]}', style: TextStyle(fontSize: 11, color: Theme.of(context).colorScheme.onSurfaceVariant)),
+        if (Platform.isWindows || Platform.isMacOS || Platform.isLinux)
+          Align(alignment: Alignment.centerLeft, child: TextButton.icon(onPressed: () => c.openReceivedFolder(transfer.id), icon: const Icon(Icons.folder_open, size: 17), label: const Text('打开文件夹'))),
+      ],
     ]),
   );
 

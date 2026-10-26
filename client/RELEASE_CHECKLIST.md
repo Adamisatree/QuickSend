@@ -1,30 +1,23 @@
-# QuickSend v2.0 发布检查清单
+# QuickSend v2.1 发布检查清单
 
-**当前状态：v2.0.0 GitHub 预发布预览版已发布；稳定版检查仍未完成。** 发布地址：<https://github.com/Adamisatree/QuickSend/releases/tag/v2.0.0>。发布工作流首次尝试遇到 macOS Intel artifact 上传超时，重新触发后全矩阵成功：<https://github.com/Adamisatree/QuickSend/actions/runs/40299566280>。合并前 Flutter 分析、测试和平台构建通过 <https://github.com/Adamisatree/QuickSend/actions/runs/40294616989>，Node CI 通过 <https://github.com/Adamisatree/QuickSend/actions/runs/40294616979>。LAN 自动发现/传输尚未经过真实设备测试，亦未完成独立安全审查；CI 不等于设备验证或生产就绪。
+**状态：开发中。** v2.0.0 是当前已发布的 GitHub 预览版（<https://github.com/Adamisatree/QuickSend/releases/tag/v2.0.0>）。本分支的保存位置设置、桌面安装程序及 Linux DEB 尚未通过 CI、打包器完整验证或真实设备测试；不要创建 v2.1.0 标签，直到相关门槛通过。
 
-## 已发布的旧版本
+## v2.1 目标
 
-- v1.1.0 已发布为 GitHub **预发布预览版**：<https://github.com/Adamisatree/QuickSend/releases/tag/v1.1.0>。
-- 其发布工作流成功：<https://github.com/Adamisatree/QuickSend/actions/runs/40273823170>。
-- v1.1.0 包含未签名/测试用途构建，不是稳定版或生产签名发行版。该历史发布不代表 v2.0 已验证。
+- Windows：Inno Setup 安装程序 EXE（不再用 ZIP）；Linux：DEB 安装包；macOS：带 Applications 快捷方式的 DMG；Android：APK。iOS 暂不提供发布包。
+- 桌面端默认接收至系统 Downloads；Android/iOS 默认应用 Documents/Downloads 沙盒目录，并支持通过分享菜单导出；允许选择其他目录、恢复默认并显示实际目录。
+- 接收文件放入 `<选择的目录>/QuickSend/Received/<transfer-id>`；桌面端显示实际传输目录并提供“打开文件夹”，移动端使用系统分享菜单。设置只影响之后的接收，不移动旧文件。
 
-## v2.0 实现目标
+## 发布前必须完成
 
-- 中文原生 Flutter 界面。
-- UDP 广播发现局域网中继设备及其设备名称，保留手动 IP 输入作为备用。
-- 私密房间、设备列表、群组与群聊、文件/文件夹发送。
-- 每次发送选择严格保密（端到端加密）或高速（文件内容明文经过局域网中继），并在发送与接收界面清晰警示。
-
-## 稳定版之前的剩余门槛
-
-- [x] Flutter 依赖解析、分析、全部测试、Linux/Windows/macOS/Android/iOS CI 构建通过（run 40294616989）；Node CI 通过（run 40294616979）。
-- [ ] 补充/通过高速模式 relay 测试与严格模式回归测试；测试旧版缺省模式兼容行为、拒绝流程、断线、零字节文件、路径/大小限制与校验失败清理。
-- [ ] 在真实设备/独立机器上测试 UDP 发现：Android、iOS、Windows、macOS、Linux；验证防火墙、不同 Wi-Fi/子网、访客网络、VPN 和手动连接回退。检查 socket 关闭与进程退出行为。
-- [ ] 在真实设备间测试严格模式的文件名/路径/内容保护，以及高速模式明文可见性警示与校验行为；确认中继看到的字段与文档一致。
-- [ ] 对所有支持平台执行干净环境安装/启动测试；实际测试文件、嵌套目录、多接收方、磁盘空间不足、拒绝/取消和较大文件。
-- [ ] 独立安全审查新的发现协议、共享房间密钥模型、加密/非加密模式差异、明文高速路径、完整性语义、拒绝服务防护和跨平台文件保存行为。当前实现未经独立审计。
-- [ ] 决定并完成签名/分发要求。不得伪造证书或凭据。Windows/macOS Authenticode 与 notarization、iOS Apple 签名/配置文件、Android 生产签名均需发布者自己的凭据；当前未配置。
-- [x] 更新 v2.0 release workflow/说明、版本号、校验和及资产清单；v2.0.0 预览标签已发布，并明确标示预览、未签名与真实设备验证限制。
+- [ ] Flutter analyze/test 和完整多平台 CI 通过；Node CI 通过。
+- [ ] Windows x64/ARM64 安装器可安装、启动、升级、卸载；快捷方式正确，中文安装向导正常，未签名警告有说明。
+- [ ] Linux x64/ARM64 DEB 安装、依赖、菜单入口、启动与卸载正常。
+- [ ] macOS Intel/Apple Silicon DMG 的 Applications 拖放快捷方式可用。
+- [ ] Android、iOS、Windows、macOS、Linux 实测默认下载路径、选择/重置目录、权限拒绝/目录卸载、带空格/中文路径、零字节和多文件、取消及清理。
+- [ ] 验证界面路径与实际保存路径一致；同名文件由 transfer-id 子目录隔离；磁盘不足/路径不可写时不能误报完成。
+- [ ] 所有包名、版本号、中文发布说明、SHA-256 清单准确，预览/签名限制清楚。
+- [ ] 不伪造或代填签名凭据。Windows Authenticode、macOS Developer ID/notarization、Android 生产签名和 iOS provisioning 均需发布者自己的身份。
 
 ## 验证命令
 
@@ -36,4 +29,4 @@ flutter analyze --no-fatal-infos
 flutter test
 ```
 
-CI 的构建结果仅说明相应 runner 上的编译与自动化检查状态，不能证明真实设备行为、安装体验、网络权限、后台传输或包签名有效。
+`package_deb.sh` 可在 Linux 上单独测试 DEB 元数据；CI 编译和脚本测试都不能替代真实设备与干净机器安装测试。签名未配置时，2.1 若发布也必须继续作为明确标注的预览版。
