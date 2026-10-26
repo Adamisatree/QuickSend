@@ -1,0 +1,200 @@
+name: Publish QuickSend v1.1
+
+on:
+  push:
+    tags: ['v1.1.0']
+
+permissions:
+  contents: read
+
+concurrency:
+  group: quicksend-v1.1-release
+  cancel-in-progress: false
+
+jobs:
+  build:
+    name: Build · ${{ matrix.target }}
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 60
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: ubuntu-latest
+            target: linux-x64
+            flutter_arch: x64
+            flutter_os: linux
+          - os: ubuntu-24.04-arm
+            target: linux-arm64
+            flutter_arch: arm64
+            flutter_os: linux
+          - os: windows-latest
+            target: windows-x64
+            flutter_arch: x64
+            flutter_os: windows
+          - os: windows-11-arm
+            target: windows-arm64
+            flutter_arch: arm64
+            flutter_os: windows
+          - os: macos-latest
+            target: macos-apple-silicon
+            flutter_arch: arm64
+            flutter_os: macos
+          - os: macos-15-intel
+            target: macos-intel
+            flutter_arch: x64
+            flutter_os: macos
+          - os: ubuntu-latest
+            target: android-apk
+            flutter_arch: x64
+            flutter_os: linux
+    defaults:
+      run:
+        working-directory: client
+        shell: bash
+    steps:
+      - uses: actions/checkout@v7
+      - name: Install jq on ARM Linux runner
+        if: runner.os == 'Linux' && matrix.flutter_arch == 'arm64'
+        run: sudo apt-get update && sudo apt-get install -y jq
+      - name: Install jq on ARM Windows runner
+        if: runner.os == 'Windows' && matrix.flutter_arch == 'arm64'
+        run: choco install jq -y
+      - name: Resolve stable Flutter tag for non-macOS ARM runners
+        id: flutter-version
+        if: runner.os != 'macOS' && matrix.flutter_arch == 'arm64'
+        shell: bash
+        run: |
+          manifest_os=${{ matrix.flutter_os }}
+          version=$(curl --fail --silent --show-error --location \
+            "https://storage.googleapis.com/flutter_infra_release/releases/releases_${manifest_os}.json" \
+            | jq -r '[.releases[] | select(.channel == "stable")][0].version')
+          if [[ -z "$version" || "$version" == "null" ]]; then
+            echo "Could not resolve the latest stable Flutter tag for $manifest_os" >&2
+            exit 1
+          fi
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+          echo "Using Flutter release tag $version from source."
+      - uses: subosito/flutter-action@v2
+        with:
+          channel: ${{ runner.os != 'macOS' && matrix.flutter_arch == 'arm64' && 'master' || 'stable' }}
+          flutter-version: ${{ steps.flutter-version.outputs.version }}
+          architecture: ${{ matrix.flutter_arch }}
+          cache: true
+      - name: Install Linux desktop prerequisites
+        if: runner.os == 'Linux' && matrix.target != 'android-apk'
+        run: sudo apt-get update && sudo apt-get install -y clang cmake ninja-build pkg-config libgtk-3-dev liblzma-dev
+      - uses: actions/setup-java@v6
+        if: matrix.target == 'android-apk'
+        with:
+          distribution: temurin
+          java-version: '21'
+      - uses: android-actions/setup-android@v4
+        if: matrix.target == 'android-apk'
+        with:
+          packages: platform-tools platforms;android-35 build-tools;35.0.0
+      - name: Generate native runner projects and LAN permissions
+        run: bash tool/bootstrap_platforms.sh
+      - run: flutter pub get
+      - name: Analyze Flutter client
+        run: flutter analyze --no-fatal-infos
+      - name: Run Flutter tests with failure diagnostics
+        run: |
+          set +e
+          flutter test --reporter expanded 2>&1 | tee "$RUNNER_TEMP/flutter-test.txt"
+          status=${PIPESTATUS[0]}
+          if [ "$status" -ne 0 ]; then
+            while IFS= read -r line; do
+              echo "::error title=Flutter test detail::$line"
+            done < "$RUNNER_TEMP/flutter-test.txt"
+          fi
+          exit "$status"
+      - name: Build release app
+        if: matrix.target != 'android-apk'
+        run: |
+          case "${{ matrix.target }}" in
+            linux-*) flutter build linux --release ;;
+            windows-*) flutter build windows --release ;;
+            macos-*) flutter build macos --release ;;
+          esac
+      - name: Build Android release APK
+        if: matrix.target == 'android-apk'
+        run: flutter build apk --release
+      - name: Package Linux release archive
+        if: startsWith(matrix.target, 'linux-')
+        run: |
+          mkdir -p release-assets
+          tar -C "build/linux/${{ matrix.flutter_arch }}/release/bundle" -czf \
+            "release-assets/QuickSend-${GITHUB_REF_NAME}-${{ matrix.target }}.tar.gz" .
+      - name: Package Windows release archive
+        if: startsWith(matrix.target, 'windows-')
+        shell: pwsh
+        env:
+          TARGET_ARCH: ${{ matrix.flutter_arch }}
+        run: |
+          $bundle = Join-Path $env:GITHUB_WORKSPACE "client/build/windows/$env:TARGET_ARCH/runner/Release"
+          if (-not (Test-Path $bundle)) { throw "Missing Windows release bundle: $bundle" }
+          if (-not (Get-ChildItem $bundle -Filter '*.exe' -File)) { throw "No executable found in $bundle" }
+          New-Item -ItemType Directory -Force -Path 'release-assets' | Out-Null
+          $archive = "release-assets/QuickSend-$env:GITHUB_REF_NAME-windows-$env:TARGET_ARCH.zip"
+          Compress-Archive -Path (Join-Path $bundle '*') -DestinationPath $archive -Force
+      - name: Package macOS disk image
+        if: startsWith(matrix.target, 'macos-')
+        env:
+          TARGET_ARCH: ${{ matrix.flutter_arch }}
+        run: |
+          app_bundle=$(find build/macos/Build/Products/Release -maxdepth 1 -name '*.app' -print -quit)
+          test -n "$app_bundle"
+          mkdir -p release-assets
+          hdiutil create -volname "QuickSend ${GITHUB_REF_NAME}" -srcfolder "$app_bundle" -ov -format UDZO \
+            "release-assets/QuickSend-${GITHUB_REF_NAME}-macos-${TARGET_ARCH}.dmg"
+      - name: Stage Android APK
+        if: matrix.target == 'android-apk'
+        run: |
+          mkdir -p release-assets
+          cp build/app/outputs/flutter-apk/app-release.apk \
+            "release-assets/QuickSend-${GITHUB_REF_NAME}-android.apk"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: QuickSend-${{ github.ref_name }}-${{ matrix.target }}
+          path: client/release-assets/*
+          if-no-files-found: error
+          retention-days: 1
+
+  publish:
+    name: Publish preview release
+    needs: build
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          path: release-assets
+          merge-multiple: true
+      - name: Generate SHA-256 checksums
+        run: |
+          cd release-assets
+          sha256sum -- * > SHA256SUMS
+      - name: Create GitHub pre-release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ github.ref_name }}
+          name: QuickSend ${{ github.ref_name }} — Preview
+          prerelease: true
+          make_latest: false
+          generate_release_notes: true
+          files: release-assets/*
+          body: |
+            **Preview build — not a stable or production-qualified release.**
+
+            Included: Linux x64/ARM64 tarballs, Windows x64/ARM64 application bundles (ZIP), macOS Intel/Apple Silicon disk images, and an Android APK.
+
+            Important limitations:
+            - Windows and macOS packages are unsigned; expect OS security warnings. Windows ZIPs contain the app and runtime files, not an installer.
+            - Android is not signed with a production upload key; it is for direct testing only, not Play Store distribution.
+            - iOS is omitted because no publisher-owned signing identity/provisioning profile is configured; the CI iOS output is unsigned and not installable as a release.
+            - This build has not completed physical-device transfer/install testing or an independent security audit. Mobile background transfer is not implemented.
+            - Use only with trusted people on a trusted LAN and a generated high-entropy room key. Do not use for sensitive or regulated data.
+
+            `SHA256SUMS` lists the published file checksums.

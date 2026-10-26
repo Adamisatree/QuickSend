@@ -1,0 +1,7 @@
+<?xml version='1.0' encoding='utf-8'?>
+<resources>
+    <string name="app_name">QuickSend</string>
+    <string name="title_activity_main">QuickSend</string>
+    <string name="package_name">com.quicksend.lan</string>
+    <string name="custom_url_scheme">com.quicksend.lan</string>
+</resources>

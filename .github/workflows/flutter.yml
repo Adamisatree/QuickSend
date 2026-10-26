@@ -1,0 +1,174 @@
+name: Flutter client
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  native:
+    name: Flutter · ${{ matrix.target }}
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 45
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: ubuntu-latest
+            target: linux-x64-android
+            flutter_arch: x64
+          - os: ubuntu-24.04-arm
+            target: linux-arm64
+            flutter_arch: arm64
+          - os: windows-latest
+            target: windows-x64
+            flutter_arch: x64
+          - os: windows-11-arm
+            target: windows-arm64
+            flutter_arch: arm64
+          - os: macos-latest
+            target: macos-arm64-ios
+            flutter_arch: arm64
+          - os: macos-15-intel
+            target: macos-intel
+            flutter_arch: x64
+    defaults:
+      run:
+        working-directory: client
+        shell: bash
+    steps:
+      - uses: actions/checkout@v7
+      - name: Install jq on ARM Linux runner
+        if: runner.os == 'Linux' && matrix.flutter_arch == 'arm64'
+        run: sudo apt-get update && sudo apt-get install -y jq
+      - name: Install jq on ARM Windows runner
+        if: runner.os == 'Windows' && matrix.flutter_arch == 'arm64'
+        run: choco install jq -y
+      - name: Resolve stable Flutter tag for non-macOS ARM runners
+        id: flutter-version
+        if: runner.os != 'macOS' && matrix.flutter_arch == 'arm64'
+        shell: bash
+        run: |
+          manifest_os=linux
+          if [[ "$RUNNER_OS" == "Windows" ]]; then manifest_os=windows; fi
+          version=$(curl --fail --silent --show-error --location \
+            "https://storage.googleapis.com/flutter_infra_release/releases/releases_${manifest_os}.json" \
+            | jq -r '[.releases[] | select(.channel == "stable")][0].version')
+          if [[ -z "$version" || "$version" == "null" ]]; then
+            echo "Could not resolve the latest stable Flutter tag for $manifest_os" >&2
+            exit 1
+          fi
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+          echo "Using Flutter release tag $version from the Git repository."
+      - uses: subosito/flutter-action@v2
+        with:
+          # ARM host SDK archives are missing from the official stable manifests;
+          # install the matching stable release tag from source instead.
+          channel: ${{ runner.os != 'macOS' && matrix.flutter_arch == 'arm64' && 'master' || 'stable' }}
+          flutter-version: ${{ steps.flutter-version.outputs.version }}
+          architecture: ${{ matrix.flutter_arch }}
+          cache: true
+      - name: Install Linux desktop prerequisites
+        if: runner.os == 'Linux'
+        run: sudo apt-get update && sudo apt-get install -y clang cmake ninja-build pkg-config libgtk-3-dev liblzma-dev
+      - name: Generate native runner projects and LAN permissions
+        run: bash tool/bootstrap_platforms.sh
+      - run: flutter pub get
+      - name: Analyze Flutter client
+        run: |
+          set +e
+          flutter analyze --no-fatal-infos 2>&1 | tee "$RUNNER_TEMP/flutter-analyze.txt"
+          status=${PIPESTATUS[0]}
+          if [ "$status" -ne 0 ]; then
+            while IFS= read -r line; do
+              case "$line" in
+                *" error • "*|*" warning • "*) echo "::error title=Flutter analyzer::$line" ;;
+              esac
+            done < "$RUNNER_TEMP/flutter-analyze.txt"
+          fi
+          exit "$status"
+      - name: Run Flutter tests with failure diagnostics
+        run: |
+          set +e
+          flutter test --reporter expanded 2>&1 | tee "$RUNNER_TEMP/flutter-test.txt"
+          status=${PIPESTATUS[0]}
+          if [ "$status" -ne 0 ]; then
+            while IFS= read -r line; do
+              echo "::error title=Flutter test detail::$line"
+            done < "$RUNNER_TEMP/flutter-test.txt"
+          fi
+          exit "$status"
+      - name: Build Linux x64 and Android
+        if: matrix.target == 'linux-x64-android'
+        run: flutter build linux --release && flutter build apk --release
+      - name: Upload Linux x64/Android validation builds
+        if: (github.event_name == 'pull_request' || github.event_name == 'workflow_dispatch') && matrix.target == 'linux-x64-android'
+        uses: actions/upload-artifact@v4
+        with:
+          name: QuickSend-v1.1-validation-linux-x64-android
+          retention-days: 7
+          path: |
+            client/build/linux/x64/release/bundle/**
+            client/build/app/outputs/flutter-apk/app-release.apk
+          if-no-files-found: error
+      - name: Build Linux ARM64
+        if: matrix.target == 'linux-arm64'
+        run: flutter build linux --release
+      - name: Upload Linux ARM64 validation build
+        if: (github.event_name == 'pull_request' || github.event_name == 'workflow_dispatch') && matrix.target == 'linux-arm64'
+        uses: actions/upload-artifact@v4
+        with:
+          name: QuickSend-v1.1-validation-linux-arm64
+          retention-days: 7
+          path: client/build/linux/arm64/release/bundle/**
+          if-no-files-found: error
+      - name: Build Windows x64
+        if: matrix.target == 'windows-x64'
+        run: flutter build windows --release
+      - name: Upload Windows x64 validation build
+        if: (github.event_name == 'pull_request' || github.event_name == 'workflow_dispatch') && matrix.target == 'windows-x64'
+        uses: actions/upload-artifact@v4
+        with:
+          name: QuickSend-v1.1-validation-windows-x64
+          retention-days: 7
+          path: client/build/windows/x64/runner/Release/**
+          if-no-files-found: error
+      - name: Build Windows ARM64
+        if: matrix.target == 'windows-arm64'
+        run: flutter build windows --release
+      - name: Upload Windows ARM64 validation build
+        if: (github.event_name == 'pull_request' || github.event_name == 'workflow_dispatch') && matrix.target == 'windows-arm64'
+        uses: actions/upload-artifact@v4
+        with:
+          name: QuickSend-v1.1-validation-windows-arm64
+          retention-days: 7
+          path: client/build/windows/arm64/runner/Release/**
+          if-no-files-found: error
+      - name: Build macOS Apple Silicon and unsigned iOS
+        if: matrix.target == 'macos-arm64-ios'
+        run: flutter build macos --release && flutter build ios --release --no-codesign
+      - name: Upload macOS Apple Silicon/iOS validation builds
+        if: (github.event_name == 'pull_request' || github.event_name == 'workflow_dispatch') && matrix.target == 'macos-arm64-ios'
+        uses: actions/upload-artifact@v4
+        with:
+          name: QuickSend-v1.1-validation-macos-arm64-ios
+          retention-days: 7
+          path: |
+            client/build/macos/Build/Products/Release/**
+            client/build/ios/iphoneos/**
+          if-no-files-found: error
+      - name: Build macOS Intel
+        if: matrix.target == 'macos-intel'
+        run: flutter build macos --release
+      - name: Upload macOS Intel validation build
+        if: (github.event_name == 'pull_request' || github.event_name == 'workflow_dispatch') && matrix.target == 'macos-intel'
+        uses: actions/upload-artifact@v4
+        with:
+          name: QuickSend-v1.1-validation-macos-intel
+          retention-days: 7
+          path: client/build/macos/Build/Products/Release/**
+          if-no-files-found: error
