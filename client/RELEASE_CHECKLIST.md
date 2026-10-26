@@ -1,20 +1,20 @@
 # QuickSend v2.1 发布检查清单
 
-**状态：v2.1 预览候选。** v2.0.0 是当前已发布的 GitHub 预览版（<https://github.com/Adamisatree/QuickSend/releases/tag/v2.0.0>）。v2.1 代码 CI 已通过；真实设备、安装/卸载体验与独立安全审计仍未完成。创建 `v2.1.0` 标签会启动包生成与 GitHub 预览发布，只有 release workflow 成功后才可称为“已发布预览”，不得描述为稳定或生产就绪。
+**状态：v2.1.0 预览版已发布**（<https://github.com/Adamisatree/QuickSend/releases/tag/v2.1.0>）。多平台代码 CI 和资产打包通过；真实设备安装/传输验证与独立安全审计仍未完成。不得将此预览版描述为稳定或生产就绪。
 
-## v2.1 预览目标
+## v2.1 预览资产与功能
 
-- Windows：Inno Setup 安装程序 EXE（不再用 ZIP）；Linux：DEB；macOS：带 Applications 快捷方式的 DMG；Android：APK。iOS 暂不提供发布包。
+- Windows：NSIS per-user 安装程序 EXE（不再用 ZIP）；Linux：DEB；macOS：带 Applications 快捷方式的 DMG；Android：APK。iOS 暂不提供发布包。
 - 桌面默认接收至系统 Downloads；Android/iOS 默认应用 Documents/Downloads 沙盒目录，并支持通过分享菜单导出；允许选择其他目录、恢复默认并显示实际目录。
 - 接收文件放入 `<选择的目录>/QuickSend/Received/<transfer-id>`；桌面端显示实际传输目录并提供“打开文件夹”。设置只影响之后的接收，不移动旧文件。
 
-## 预览发布前必须
+## 预览发布记录
 
-- [x] Flutter analyze/test 和完整多平台 CI 通过；Node CI 通过。
-- [ ] v2.1 release workflow 成功生成全部目标平台资产与 `SHA256SUMS`。
-- [ ] 检查资产清单确为 Windows x64/ARM64 EXE installer、Linux x64/ARM64 DEB、macOS Intel/Apple Silicon DMG、Android APK；无 ZIP-only 桌面资产。
-- [ ] Release notes 清楚标明预览状态、签名限制、高速模式明文风险、设备测试/审计未完成。
-- [ ] 不伪造或代填签名凭据；Windows/macOS/Android/iOS 生产签名仍需发布者自己的身份与配置。
+- [x] Flutter analyze/test、多平台代码 CI 与 Node CI 通过。
+- [x] v2.1 release workflow 成功生成全部平台资产与 `SHA256SUMS`。
+- [x] 检查资产清单：Windows x64/ARM64 EXE、Linux x64/ARM64 DEB、macOS Intel/Apple Silicon DMG、Android APK；没有 ZIP-only 桌面资产。
+- [x] Release notes 标明预览状态、签名限制、高速模式明文风险、设备测试/审计未完成。
+- [x] 未伪造或代填签名凭据；Windows/macOS/Android/iOS 生产签名仍需发布者自己的身份与配置。
 
 ## 提升稳定版前必须
 
@@ -35,4 +35,4 @@ flutter analyze --no-fatal-infos
 flutter test
 ```
 
-CI 和包构建都不能替代真实设备安装/传输测试；完成预览发布后仍需先完成上述稳定版验收。
+CI 和包构建都不能替代真实设备安装/传输测试；完成预览发布后仍须先完成上述稳定版验收。
