@@ -1,14 +1,14 @@
 # QuickSend
 
-> **v2.0.0 预览版已发布**。当前正在开发 v2.1：Windows 改为可运行的安装程序、Linux 提供 DEB 安装包，客户端增加默认下载目录、路径展示和桌面端打开文件夹。v2.1 尚未发布，也未完成新一轮 CI 与真实设备验证。
+> **v2.1.0 预览版已发布**：<https://github.com/Adamisatree/QuickSend/releases/tag/v2.1.0>。包含 Windows 安装程序 EXE、Linux DEB、macOS DMG 和 Android APK。代码 CI 与包构建通过；真实设备安装/传输验证、独立安全审计及生产签名尚未完成，因此不是稳定或生产就绪版本。
 
-QuickSend 是面向可信局域网的原生 Flutter 应用，支持中文界面、局域网设备发现、私密房间、群组聊天和文件传输。每次发送可选择严格保密（文件端到端加密）或高速传输（文件内容明文经过局域网中继；仅限可信网络）。v2.0 预览包在 [GitHub Releases](https://github.com/Adamisatree/QuickSend/releases/tag/v2.0.0)；旧版 Web/Electron/Capacitor 仍保留在仓库，但不属于 v2.x 主客户端。
+QuickSend 是面向可信局域网的原生 Flutter 应用，支持中文界面、局域网设备发现、私密房间、群组聊天和文件传输。每次发送可选择严格保密（文件端到端加密）或高速传输（文件内容明文经过局域网中继；仅限可信网络）。旧版 Web/Electron/Capacitor 仍保留在仓库，但不属于 v2.x 主客户端。
 
-## v2.1 文件保存与安装体验（开发中）
+## v2.1 文件保存与安装体验
 
 - 桌面端默认使用系统 Downloads 目录；Android/iOS 默认应用 Documents/Downloads 沙盒目录（移动端可用分享菜单另存至公开“下载”目录）。也可在“传输记录 → 文件保存位置”中选择其他目录。
 - 界面显示完整保存目录；文件按传输编号归档至 `QuickSend/Received/<transfer-id>`，桌面端可从传输记录直接打开文件夹。更改位置只影响之后收到的文件。
-- 发布目标：Windows 安装程序 EXE、Linux DEB、macOS DMG、Android APK。Windows/macOS/Android 包仍未使用发布者生产签名；iOS 需要 Apple 签名身份与配置文件。
+- 发布包：Windows 安装程序 EXE、Linux DEB、macOS DMG、Android APK。Windows/macOS/Android 包未使用发布者生产签名；iOS 需要 Apple 签名身份与配置文件。
 
 ## 局域网连接
 
@@ -27,4 +27,4 @@ flutter test
 flutter run -d <device>
 ```
 
-CI 编译和自动化测试不能证明真实设备发现/传输、安装体验、后台行为或签名有效。v2.1 发布检查见 [`client/RELEASE_CHECKLIST.md`](client/RELEASE_CHECKLIST.md)，安全说明见 [`client/SECURITY_REVIEW.md`](client/SECURITY_REVIEW.md)。
+CI 编译和自动化测试不能证明真实设备发现/传输、安装体验、后台行为或签名有效。发布检查见 [`client/RELEASE_CHECKLIST.md`](client/RELEASE_CHECKLIST.md)，安全说明见 [`client/SECURITY_REVIEW.md`](client/SECURITY_REVIEW.md)。
