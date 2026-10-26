@@ -81,7 +81,7 @@ void main() {
 
     final error = await _nextJson(iterator);
     expect(error['type'], 'error');
-    expect(error['message'], 'Invalid room key or public key');
+    expect(error['message'], '房间密钥或公钥无效');
     await iterator.cancel();
   });
 
@@ -99,7 +99,7 @@ void main() {
 
     final error = await _nextJson(peer.messages);
     expect(error['type'], 'transfer-error');
-    expect(error['message'], 'Invalid transfer manifest');
+    expect(error['message'], '传输清单无效');
     await peer.messages.cancel();
   });
 
@@ -126,7 +126,7 @@ void main() {
     await _nextType(sender.messages, 'transfer-ready');
     await _nextType(recipient.messages, 'transfer-start');
 
-    final metadata = utf8.encode(jsonEncode({'transferId': transferId, 'fileIndex': 0, 'seq': 0}));
+    final metadata = utf8.encode(jsonEncode({'transferId': transferId, 'fileIndex': 0, 'seq': 0, 'mode': 'strict'}));
     final header = ByteData(4)..setUint32(0, metadata.length, Endian.big);
     sender.socket.add([
       ...header.buffer.asUint8List(),
@@ -137,8 +137,50 @@ void main() {
     sender.socket.add(jsonEncode({'type': 'complete', 'transferId': transferId}));
 
     final error = await _nextType(sender.messages, 'transfer-error');
-    expect(error['message'], 'Sender ended before all declared file bytes were delivered');
+    expect(error['message'], '发送方未传完声明的文件数据');
     await sender.messages.cancel();
     await recipient.messages.cancel();
   });
+
+  test('routes approved speed-mode chunks without requiring a key envelope', () async {
+    final sender = await _join(relay, sockets, 'sender', 8);
+    final recipient = await _join(relay, sockets, 'recipient', 10);
+    await _nextType(sender.messages, 'peers');
+    await _nextType(recipient.messages, 'peers');
+    const transferId = 'd9428888-122b-4a51-8b4d-1234567890ac';
+    const payload = [1, 2, 3, 4];
+    sender.socket.add(jsonEncode({
+      'type': 'request-transfer',
+      'transferId': transferId,
+      'mode': 'speed',
+      'recipients': [recipient.id],
+      'files': [{'name': 'sample.bin', 'relativePath': 'sample.bin', 'size': 4, 'sha256': List.filled(64, 'a').join()}],
+      'keyEnvelopes': {},
+    }));
+    expect((await _nextType(sender.messages, 'transfer-state'))['state'], 'waiting');
+    expect((await _nextType(recipient.messages, 'incoming-request'))['mode'], 'speed');
+
+    recipient.socket.add(jsonEncode({'type': 'decision', 'transferId': transferId, 'accept': true}));
+    await _nextType(sender.messages, 'recipient-decision');
+    await _nextType(sender.messages, 'transfer-ready');
+    final start = await _nextType(recipient.messages, 'transfer-start');
+    expect(start['mode'], 'speed');
+    expect(start.containsKey('keyEnvelope'), isFalse);
+
+    final metadata = utf8.encode(jsonEncode({'transferId': transferId, 'fileIndex': 0, 'seq': 0, 'mode': 'speed'}));
+    final header = ByteData(4)..setUint32(0, metadata.length, Endian.big);
+    sender.socket.add([...header.buffer.asUint8List(), ...metadata, ...payload]);
+    expect(await recipient.messages.moveNext().timeout(const Duration(seconds: 5)), isTrue);
+    expect(recipient.messages.current, isA<List<int>>());
+
+    recipient.socket.add(jsonEncode({'type': 'chunk-ack', 'transferId': transferId, 'fileIndex': 0, 'seq': 0}));
+    await _nextType(sender.messages, 'chunk-acked');
+    sender.socket.add(jsonEncode({'type': 'complete', 'transferId': transferId}));
+    await _nextType(recipient.messages, 'transfer-complete');
+    recipient.socket.add(jsonEncode({'type': 'verified', 'transferId': transferId, 'ok': true}));
+    expect((await _nextType(sender.messages, 'transfer-finished'))['transferId'], transferId);
+    await sender.messages.cancel();
+    await recipient.messages.cancel();
+  });
+
 }

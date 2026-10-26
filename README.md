@@ -1,54 +1,31 @@
 # QuickSend
 
-> **v1.1 开发中：** 正在开发 Flutter 原生客户端（非 HTML UI），代码位于 [`client/`](client/README.md)。当前已发布版本仍是 v1.0.0；新客户端尚未完成全平台构建、签名或发布。Android/iOS 后台执行和 ARM64 桌面分发仍需单独验证，详见客户端说明。
+> **v2.0 开发中**：项目正在转向 Flutter 原生客户端，使用中文界面，专注于局域网设备发现、群组聊天和文件传输。当前工作尚未完成 CI 验证或真实设备测试，不应发布/描述为稳定生产版本。详见 [`client/README.md`](client/README.md)。
 
-QuickSend 是一个面向局域网的私密文件快传工具，包含轻量 Node.js 局域网服务、Windows/macOS 桌面应用壳和 Android 客户端。Windows 或 macOS 电脑可启动服务并作为传输中枢；同一网络中的设备用浏览器访问服务地址，或在 Android 应用中填写该地址后加入共享空间。桌面客户端自带服务，Android 应用作为局域网客户端。
+QuickSend 让同一局域网内的设备发现临时中继并加入私密房间，创建群组聊天、发送文件。发送方每次可选择严格保密（端到端加密）或高速传输（文件内容明文经过局域网中继）；高速模式只适用于可信网络。旧版 Web/Electron/Capacitor 客户端仍保留在仓库中，但 v2.0 的主要开发目标是 `client/` 内的 Flutter 原生应用。
 
-## 快速开始
+## v2.0 使用流程（目标）
 
-需要 Node.js 20 或更新版本。**由一台可信任的电脑运行服务**，该电脑和参与设备须处于同一 Wi-Fi / 有线局域网。可在 Windows 双击 `start-windows.bat`，在 macOS 双击 `start-macos.command`；首次启动会自动安装依赖。也可在终端执行：
+1. 在一台可信设备启动 QuickSend 局域网中继，其他设备通过广播发现其名称，或手动填写 IP/端口。
+2. 通过私密渠道分享强随机房间密钥；所有成员输入相同密钥后加入房间。
+3. 选择在线设备发送文件，或创建群组邀请成员进行加密聊天。
+4. 每次发送选择严格保密或高速模式；接收方确认后开始接收。
 
-```sh
-npm install
-npm start
-```
+自动发现只展示未认证的 UDP 广播信息，不是身份验证。访客网络隔离、防火墙、VPN 或不同子网可能阻止广播/连接；TCP/UDP 默认端口及回退步骤见客户端说明。
 
-启动后在终端查看打印出的 `http://局域网IP:4321`，其他设备用浏览器打开该地址。首次运行时，系统防火墙可能询问是否允许 Node.js 接受局域网连接，请允许**专用网络**访问。若端口被占用，可使用 `PORT=5000 npm start`（Windows PowerShell：`$env:PORT=5000; npm start`）。
-
-### 一次传给多人
-
-1. 每台设备打开同一个服务地址。
-2. 其中一台点击“生成口令”，把口令通过你信任的方式发给同伴；各设备输入相同口令并加入空间。建议使用生成的随机口令，不要复用账号密码。
-3. 选择一个或多个在线设备，挑选多个文件。接收者需要逐一同意后，文件才会开始发送。
-4. 接收者在传输动态中下载收到的文件。
-
-昵称保存在当前浏览器；共享口令只在当前页面内存中使用，刷新后需重新输入，口令本身不会发送到服务器（服务器仅收到用于分组的 SHA-256 摘要）。服务不提供跨网络发现；它不会扫描子网。在线列表只包含访问同一个服务、输入相同共享口令的设备。IP 地址是服务观察到的连接来源地址。
-
-## 安全与隐私
-
-- 每次传输都生成随机密钥；密钥分别通过 **X25519 + XSalsa20-Poly1305**（TweetNaCl box）封装给已接受的接收设备。文件内容再以 **XSalsa20-Poly1305**（TweetNaCl secretbox）逐块加密。接收设备的私钥仅保存在该设备内存中，因此同一共享空间里未被选中的成员也无法用空间口令解密文件。服务只转发公钥、密钥密文和文件密文，不持有私钥。
-- 服务只在内存中转发密文，不写入上传文件或持久化传输记录。文件名、大小、昵称、IP 和在线状态等必要元数据由局域网服务转发。
-- 默认部署为 HTTP，适合可信的私人局域网，并非匿名网络或公共 Wi-Fi 方案。端到端加密保护文件内容，但 HTTP 页面本身未经过服务器身份认证；若需要抵御局域网中主动攻击者，请将服务置于可信 HTTPS 反向代理后，通过有效 HTTPS 地址访问所有设备。反向代理需支持 WebSocket `/ws`，并将 `/api/info`、静态文件请求转发至 QuickSend。
-- 口令是共享空间的访问凭据。短口令可能被猜测；请使用“生成口令”，只通过可信渠道分享，并在用完后更换。空间内的每位成员都能看到其他成员的 IP 和昵称。
-- 局域网传输速度取决于 Wi-Fi / 网线与设备。文件按 256 KiB 分块加密；接收端在用户下载前将文件暂存在内存中，因此手机浏览器内存较少时不适合接收特别大的文件（服务端设有 20 GB 单文件上限）。
-
-## 开发与维护
+## 开发与验证
 
 ```sh
-npm install
-npm run build   # 将前端和密码学依赖打包至忽略的 public/assets/
-npm start       # 自动构建后监听 0.0.0.0:4321
+cd client
+./tool/bootstrap_platforms.sh
+flutter pub get
+flutter analyze --no-fatal-infos
+flutter test
+flutter run -d <device>
 ```
 
-- `src/server.js`：局域网 HTTP/WebSocket 信令与临时文件块转发。
-- `public/`：无框架的响应式界面、PWA manifest 与静态资源。
-- `public/app.js`：客户端发现、审批、端到端加密和分块传输逻辑；通过 esbuild 打包 `tweetnacl`、`@noble/hashes`。
+CI 构建只能说明代码通过相应 runner 的编译和自动化检查，不能证明真实设备间的发现/传输、安装体验、移动后台行为或签名状态。当前没有本地 Flutter/Dart SDK，因此需依赖 CI 验证。发布前清单见 [`client/RELEASE_CHECKLIST.md`](client/RELEASE_CHECKLIST.md)，安全限制见 [`client/SECURITY_REVIEW.md`](client/SECURITY_REVIEW.md)。
 
-## 桌面与 Android 应用
+## 旧版说明
 
-- **Windows：** `npm run dist:desktop -- --win --x64` 生成 Windows 安装程序 `.exe`。
-- **macOS：** `npm run dist:desktop -- --mac --x64 --arm64` 生成 Intel 与 Apple Silicon `.dmg`。
-- **Android：** 安装 Android SDK/JDK 后运行 `npm run cap:sync`，再执行 `cd android && ./gradlew assembleDebug` 生成可侧载测试的 APK。首次打开应用时，填入运行 QuickSend 服务电脑显示的局域网地址。
-- **v1.0 Release 自动构建：** `v1.0.*` 标签仍使用旧 Electron/Capacitor 发布流程。Flutter 原生 v1.1 目前仅做 CI 构建验证；PR 构建或手动运行 `Flutter client` workflow 会上传 7 天有效的验证用构建产物，尚未配置 v1.1 发布标签/分发流程。
-
-目前 Windows/macOS 构建未做代码签名或 notarization，系统可能显示安全提醒。Android 发布 APK 由 CI 使用调试签名，适合侧载测试，不适合 Play Store 发布；要正式上架或支持稳定升级，需要由项目所有者保管并配置自己的 Android 签名密钥。Android 客户端需连接局域网内运行 QuickSend 服务的电脑。
+旧版 Node/Web、Electron 和 Capacitor 代码仍在仓库根目录，其发布工作流与 Flutter v2.0 客户端分开。请勿将旧版页面或旧版打包脚本视为 v2.0 客户端。v1.1.0 Flutter 预览版历史资产在 [GitHub Releases](https://github.com/Adamisatree/QuickSend/releases/tag/v1.1.0)；那是预览包，并非 v2.0 稳定版。

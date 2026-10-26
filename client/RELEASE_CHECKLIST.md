@@ -1,35 +1,32 @@
-# v1.1 release readiness
+# QuickSend v2.0 发布检查清单
 
-**Status: NOT READY TO PUBLISH.** This checklist is intentionally a gate, not a release approval. No v1.1 tag or public release has been created.
+**当前状态：开发中，禁止发布 v2.0 标签。** 本地工作区没有 Flutter/Dart SDK，当前代码尚未通过本次修改后的 CI；LAN 自动发现和两种传输模式也没有经过真实设备测试。不要将编译成功等同于设备验证或生产就绪。
 
-## Passed in CI
+## 已发布的旧版本
 
-- Flutter dependency resolution, analyzer (errors/warnings fatal; info-level style lints non-fatal), and Flutter tests.
-- An internal source-level hardening pass found and addressed untrusted transfer-ID/path handling, receiver disk growth beyond declared file sizes, relay control/resource exhaustion, and interrupted-transfer cleanup. Regression tests cover malformed UUIDs, unsafe cross-platform paths, malformed auth-tag encoding, and over-declared chunk delivery. This is not an independent cryptographic security audit; see [SECURITY_REVIEW.md](SECURITY_REVIEW.md) for the scope, mitigations, and residual risks.
-- Release-mode builds completed on native CI runners for Linux x64/ARM64, Windows x64/ARM64, macOS Apple Silicon/Intel, Android APK, and unsigned iOS device output. The Linux/Windows ARM jobs bootstrap the stable Flutter release tag from source because the stable SDK archives are missing those host-architecture bundles.
-- Existing Node tests also pass. Full architecture-matrix run: <https://github.com/Adamisatree/QuickSend/actions/runs/40267805610>; Node CI: <https://github.com/Adamisatree/QuickSend/actions/runs/40267805113>.
-- Pull-request builds and manual runs of the `Flutter client` workflow upload validation-only artifacts for 7 days. The run above uploaded:
-  - [Linux x64 + Android APK](https://github.com/Adamisatree/QuickSend/actions/runs/40267805610/artifacts/12627815707)
-  - [Linux ARM64](https://github.com/Adamisatree/QuickSend/actions/runs/40267805610/artifacts/12627197005)
-  - [Windows x64](https://github.com/Adamisatree/QuickSend/actions/runs/40267805610/artifacts/12627063143)
-  - [Windows ARM64](https://github.com/Adamisatree/QuickSend/actions/runs/40267805610/artifacts/12627756048)
-  - [macOS Apple Silicon + unsigned iOS](https://github.com/Adamisatree/QuickSend/actions/runs/40267805610/artifacts/12627711274)
-  - [macOS Intel](https://github.com/Adamisatree/QuickSend/actions/runs/40267805610/artifacts/12627631635)
-  These are not signed installers and are not GitHub Releases.
+- v1.1.0 已发布为 GitHub **预发布预览版**：<https://github.com/Adamisatree/QuickSend/releases/tag/v1.1.0>。
+- 其发布工作流成功：<https://github.com/Adamisatree/QuickSend/actions/runs/40273823170>。
+- v1.1.0 包含未签名/测试用途构建，不是稳定版或生产签名发行版。该历史发布不代表 v2.0 已验证。
 
-## Required before a v1.1 release
+## v2.0 实现目标
 
-- [ ] Smoke-test the CI-built artifacts on physical/clean machines for Linux x64/ARM64, Windows x64/ARM64, macOS Intel/Apple Silicon, Android, and iOS; verify the packaged executables' architecture and install/launch behavior. CI compilation alone is not device validation.
-- [ ] Test transfers between real devices on every supported OS: approval/rejection, file and nested-folder transfer, empty/large files, multiple recipients, disconnects, insufficient storage, tampered/truncated chunks, and final SHA-256 confirmation. CI compilation is not a substitute for these tests.
-- [ ] Define a supported maximum file/transfer size based on real-device and filesystem testing; current prototype caps are implementation guards, not validated product limits.
-- [ ] Decide and implement background behavior. The current client has no Android foreground service and no iOS background-transfer implementation; mobile transfers must remain foregrounded. Desktop tray/close-to-tray behavior is also not implemented.
-- [ ] Complete an independent security review of the new protocol and threat model; address shared-room-key trust, offline guessing of weak room keys, unauthenticated plain `ws://` relay metadata, and protocol abuse/rate limits.
-- [ ] Add persistent/resume behavior only if required by the final product contract; reconnect resume and durable group history are currently absent.
-- [ ] Obtain and configure publisher-owned Windows Authenticode, macOS Developer ID/notarization, iOS distribution/provisioning, and production Android signing identities. See [SIGNING_GUIDE.md](SIGNING_GUIDE.md); these require the publisher's external accounts and are not provisioned in this workspace.
-- [ ] Produce release archives/installers for each target architecture, verify their checksums and install/upgrade/uninstall paths, and test downloaded artifacts on clean machines.
-- [ ] Before calling v1.1 stable, pass the remaining gates above. `.github/workflows/flutter-release.yml` currently responds only to the exact `v1.1.0` tag and publishes an explicitly marked preview with unsigned/test packages; the legacy Electron/Capacitor publisher remains restricted to `v1.0.*`.
+- 中文原生 Flutter 界面。
+- UDP 广播发现局域网中继设备及其设备名称，保留手动 IP 输入作为备用。
+- 私密房间、设备列表、群组与群聊、文件/文件夹发送。
+- 每次发送选择严格保密（端到端加密）或高速（文件内容明文经过局域网中继），并在发送与接收界面清晰警示。
 
-## Current validation command
+## 发布前必须完成
+
+- [ ] Flutter 依赖解析、分析、全部测试、Linux/Windows/macOS/Android/iOS CI 构建通过；修复所有与本次代码相关的失败。
+- [ ] 补充/通过高速模式 relay 测试与严格模式回归测试；测试旧版缺省模式兼容行为、拒绝流程、断线、零字节文件、路径/大小限制与校验失败清理。
+- [ ] 在真实设备/独立机器上测试 UDP 发现：Android、iOS、Windows、macOS、Linux；验证防火墙、不同 Wi-Fi/子网、访客网络、VPN 和手动连接回退。检查 socket 关闭与进程退出行为。
+- [ ] 在真实设备间测试严格模式的文件名/路径/内容保护，以及高速模式明文可见性警示与校验行为；确认中继看到的字段与文档一致。
+- [ ] 对所有支持平台执行干净环境安装/启动测试；实际测试文件、嵌套目录、多接收方、磁盘空间不足、拒绝/取消和较大文件。
+- [ ] 独立安全审查新的发现协议、共享房间密钥模型、加密/非加密模式差异、明文高速路径、完整性语义、拒绝服务防护和跨平台文件保存行为。当前实现未经独立审计。
+- [ ] 决定并完成签名/分发要求。不得伪造证书或凭据。Windows/macOS Authenticode 与 notarization、iOS Apple 签名/配置文件、Android 生产签名均需发布者自己的凭据；当前未配置。
+- [ ] 更新 v2.0 release workflow/说明、版本号、校验和及资产清单。只有在上述验证和发布状态审阅完成后，才能创建 v2.0 发布标签；若只能提供预览包，必须显著标明预览、未签名与设备验证限制。
+
+## 验证命令
 
 ```sh
 cd client
@@ -39,4 +36,4 @@ flutter analyze --no-fatal-infos
 flutter test
 ```
 
-Native runner projects are generated by the bootstrap script and intentionally ignored by Git. The PR workflow builds validation artifacts only. The separate v1.1 tag workflow builds unsigned packages and creates a GitHub **pre-release**; it does not produce signed production installers or an iOS IPA.
+CI 的构建结果仅说明相应 runner 上的编译与自动化检查状态，不能证明真实设备行为、安装体验、网络权限、后台传输或包签名有效。

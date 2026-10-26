@@ -21,6 +21,6 @@ plist = Path('ios/Runner/Info.plist')
 if plist.exists():
     text = plist.read_text()
     if 'NSLocalNetworkUsageDescription' not in text:
-        text = text.replace('</dict>', '    <key>NSLocalNetworkUsageDescription</key>\n    <string>QuickSend connects directly to devices on your local network.</string>\n    <key>NSAppTransportSecurity</key>\n    <dict><key>NSAllowsLocalNetworking</key><true/></dict>\n</dict>')
+        text = text.replace('</dict>', '    <key>NSLocalNetworkUsageDescription</key>\n    <string>QuickSend uses your local network to discover nearby devices and send files.</string>\n    <key>NSAppTransportSecurity</key>\n    <dict><key>NSAllowsLocalNetworking</key><true/></dict>\n</dict>')
         plist.write_text(text)
 PY
