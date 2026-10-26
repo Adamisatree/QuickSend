@@ -91,7 +91,17 @@ jobs:
             done < "$RUNNER_TEMP/flutter-analyze.txt"
           fi
           exit "$status"
-      - run: flutter test
+      - name: Run Flutter tests with failure diagnostics
+        run: |
+          set +e
+          flutter test --reporter expanded 2>&1 | tee "$RUNNER_TEMP/flutter-test.txt"
+          status=${PIPESTATUS[0]}
+          if [ "$status" -ne 0 ]; then
+            while IFS= read -r line; do
+              echo "::error title=Flutter test detail::$line"
+            done < "$RUNNER_TEMP/flutter-test.txt"
+          fi
+          exit "$status"
       - name: Build Linux x64 and Android
         if: matrix.target == 'linux-x64-android'
         run: flutter build linux --release && flutter build apk --release
