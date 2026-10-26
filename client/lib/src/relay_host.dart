@@ -282,7 +282,7 @@ class RelayHost {
     transfer.waitingAcks[ackKey] = {...transfer.accepted};
     for (final recipientId in transfer.accepted) {
       final target = _sessions[recipientId];
-      if (target?.socket.readyState == WebSocket.open) target!.socket.add(frame);
+      if (target != null) _sendBinary(target, frame);
     }
   }
 
@@ -361,7 +361,29 @@ class RelayHost {
     for (final id in group.members) _send(_sessions[id], message);
   }
   void _send(_Session? session, Map<String, dynamic> message) {
-    if (session?.socket.readyState == WebSocket.open) session!.socket.add(jsonEncode(message));
+    if (session == null || session.socket.readyState != WebSocket.open) return;
+    try {
+      session.socket.add(jsonEncode(message));
+    } catch (_) {
+      _closeQuietly(session);
+    }
+  }
+
+  void _sendBinary(_Session session, List<int> frame) {
+    if (session.socket.readyState != WebSocket.open) return;
+    try {
+      session.socket.add(frame);
+    } catch (_) {
+      _closeQuietly(session);
+    }
+  }
+
+  void _closeQuietly(_Session session) {
+    try {
+      unawaited(session.socket.close(WebSocketStatus.goingAway));
+    } catch (_) {
+      // The peer may already be closing; cleanup is driven by onDone/onError.
+    }
   }
   String _uuid() => '${_hex(4)}-${_hex(2)}-4${_hex(2).substring(1)}-${(8 + _random.nextInt(4)).toRadixString(16)}${_hex(2).substring(1)}-${_hex(6)}';
   String _hex(int bytes) => List.generate(bytes, (_) => _random.nextInt(256).toRadixString(16).padLeft(2, '0')).join();
